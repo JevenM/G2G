@@ -2,10 +2,10 @@ import copy
 import torch
 import Model
 from torch import optim
-from utils import LabelSmoothingLoss, GradualWarmupScheduler
+from utils import GradualWarmupScheduler
 
 
-def init_model(model_type,args):
+def init_model(model_type, args):
     model = []
     if model_type == 'LeNet5':
         model = Model.LeNet5()
@@ -89,7 +89,9 @@ class Global_Node(object):
                                                after_scheduler = afsche_global)
 
     def merge(self, Node_List):
+        # 清零
         weights_zero(self.model)
+        # FedAvg，每个node的meme和global model的结构一样
         Node_State_List = [copy.deepcopy(Node_List[i].meme.state_dict()) for i in range(len(Node_List))]
         for key in self.Dict.keys():
             for i in range(len(Node_List)):

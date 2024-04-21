@@ -8,7 +8,7 @@ from torchvision import datasets, transforms
 
 
 class Data(object):
-    def __init__(self, args,logger):
+    def __init__(self, args, logger):
         self.args = args
         iteration = args.iteration
         client = None

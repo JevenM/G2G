@@ -1,6 +1,6 @@
 import torch
 import Node
-from torch.optim.lr_scheduler import _LRScheduler,ReduceLROnPlateau
+from torch.optim.lr_scheduler import _LRScheduler, ReduceLROnPlateau
 
 
 class GradualWarmupScheduler(_LRScheduler):
@@ -128,6 +128,7 @@ class Recorder(object):
         return self.val_acc[str(node.num)][-1], self.val_loss[str(node.num)][-1]
 
     def printer(self, node):
+        # num==0是global model
         if self.get_a_better[node.num] == 1 and node.num == 0:
             print('Node{:d}: A Better Accuracy: {:.2f}%! Model Saved!'.format(node.num, self.acc_best[node.num]))
             self.get_a_better[node.num] = 0

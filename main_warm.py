@@ -4,11 +4,11 @@ from Args import args_parser
 from Data import Data
 from utils import LR_scheduler, Recorder, Catfish, Summary
 from Trainer import Trainer
-from log import logger_config,set_random_seed
+from log import logger_config, set_random_seed
 
 # init args
 args = args_parser()
-logger = logger_config(log_path='../logger/{}_{}_{}_alpha_{}_beta_{}.txt'.format(
+logger = logger_config(log_path='./logger/{}_{}_{}_alpha_{}_beta_{}.txt'.format(
                         args.lr,
                         args.E, 
                         args.batch_size,
@@ -17,7 +17,8 @@ logger = logger_config(log_path='../logger/{}_{}_{}_alpha_{}_beta_{}.txt'.format
                         logging_name='FedRD')
 args.device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
 print('Running on', args.device)
-Data = Data(args,logger)
+
+Data = Data(args, logger)
 
 
 # init nodes
