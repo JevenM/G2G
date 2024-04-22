@@ -8,7 +8,7 @@ Code to reproduce the experiments of **G2G:Generalized Learning by Cross-Domain 
 ### Install the requirement
  >  pip install -r requirements.txt
 ### Download VLCS, PACS and Office-Home datasets
-* Download VLCS from https://github.com/jindongwang/transferlearning/blob/master/data/dataset.md, extract, move it to datasets/VLCS/
+* Download VLCS from https://github.com/jindongwang/transferlearning/blob/master/data/dataset.md, extract, move it to datasets/VLCS/VLCS/
 ([MEGA](https://mega.nz/#F!gTJxGTJK!w9UJjZVq3ClqGj4mBDmT4A)|[Baiduyun](https://pan.baidu.com/s/1nuNiJ0l))使用百度云下载下来5个mat文件，读取不了。只能又去百度搜索，找到http://www.mediafire.com/file/7yv132lgn1v267r/vlcs.tar.gz/file，在此下载
 * Download PACS from https://drive.google.com/uc?id=0B6x7gtvErXgfbF9CSk53UkRxVzg, move it to datasets/PACS/
 * Download Office-Home from https://datasets.activeloop.ai/docs/ml/datasets/office-home-dataset/, move it to datasets/OfficeHome/
