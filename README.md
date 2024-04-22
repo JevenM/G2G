@@ -9,6 +9,7 @@ Code to reproduce the experiments of **G2G:Generalized Learning by Cross-Domain 
  >  pip install -r requirements.txt
 ### Download VLCS, PACS and Office-Home datasets
 * Download VLCS from https://github.com/jindongwang/transferlearning/blob/master/data/dataset.md, extract, move it to datasets/VLCS/
+([MEGA](https://mega.nz/#F!gTJxGTJK!w9UJjZVq3ClqGj4mBDmT4A)|[Baiduyun](https://pan.baidu.com/s/1nuNiJ0l))使用百度云下载下来5个mat文件，读取不了。只能又去百度搜索，找到http://www.mediafire.com/file/7yv132lgn1v267r/vlcs.tar.gz/file，在此下载
 * Download PACS from https://drive.google.com/uc?id=0B6x7gtvErXgfbF9CSk53UkRxVzg, move it to datasets/PACS/
 * Download Office-Home from https://datasets.activeloop.ai/docs/ml/datasets/office-home-dataset/, move it to datasets/OfficeHome/
 ### Download Pre-trained models
@@ -17,14 +18,14 @@ Code to reproduce the experiments of **G2G:Generalized Learning by Cross-Domain 
 * Download pre-trained VGG16 https://download.pytorch.org/models/vgg16-397923af.pth and move it to models/
 ### Running ours on VLCS
 ``` 
-python main_warm.py --node_num 3  --device cuda:0 --dataset vlcs --classes 5 --lr 0.0008 --global_model Alexnet --local_model Alexnet --algorithm fed_mutual --R 50 --E 7 --pretrained True --batch_size 64 --iteration 0 
+pymao main_warm.py --node_num 3  --device cuda:0 --dataset vlcs --classes 5 --lr 0.0008 --global_model Alexnet --local_model Alexnet --algorithm fed_mutual --R 50 --E 7 --pretrained True --batch_size 64 --iteration 0 
 ```
 ### Running ours on PACS
 ``` 
-python main_warm.py --node_num 3  --device cuda:0 --dataset pacs --classes 7 --lr 0.0008 --global_model Alexnet --local_model Alexnet --algorithm fed_mutual --R 50 --E 7 --pretrained True --batch_size 32 --iteration 0 
+pymao main_warm.py --node_num 3  --device cuda:0 --dataset pacs --classes 7 --lr 0.0008 --global_model Alexnet --local_model Alexnet --algorithm fed_mutual --R 50 --E 7 --pretrained True --batch_size 32 --iteration 0 
 ```
 ### Running ours on Office-Home
 ``` 
-python main_warm.py --node_num 3 --device cuda:0 --dataset office-home --classes 65 --lr 0.0008 --global_model ResNet50 --local_model ResNet50 --algorithm fed_mutual --R 50 --E 7 --batch_size 32 --iteration 0 
+pymao main_warm.py --node_num 3 --device cuda:0 --dataset office-home --classes 65 --lr 0.0008 --global_model ResNet50 --local_model ResNet50 --algorithm fed_mutual --R 50 --E 7 --batch_size 32 --iteration 0 
 ```
 
