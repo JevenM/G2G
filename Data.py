@@ -78,7 +78,7 @@ class Loader_dataset(data.Dataset):
         return data, label
 
 def get_vlcs_loaders(args, client):
-    path_root = './datasets/VLCS/VLCS'
+    path_root = './datasets/VLCS/VLCS/'
     trans0 = transforms.Compose([transforms.RandomResizedCrop(225, scale=(0.7, 1.0)),
                                  transforms.RandomHorizontalFlip(),
                                  transforms.RandomGrayscale(),
