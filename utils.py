@@ -130,7 +130,7 @@ class Recorder(object):
             self.get_a_better[node.num] = 1
             self.acc_best[node.num] = self.val_acc[str(node.num)][-1]
             torch.save(node.model.state_dict(),
-                       'save/model/Node{:d}_{:s}_{:d}_{:s}.pt'.format(node.num, node.args.local_model, node.args.iteration, node.args.algorithm))
+                       node.args.save_path+'/save/model/Node{:d}_{:s}_{:d}_{:s}.pt'.format(node.num, node.args.local_model, node.args.iteration, node.args.algorithm))
             # add warm_up lr 
             if self.args.warm_up == True and str(node.num) != '0':
                 node.sche_local.step(metrics=self.val_acc[str(node.num)][-1])
@@ -169,7 +169,7 @@ class Recorder(object):
 
     def finish(self):
         torch.save([self.val_loss, self.val_acc],
-                   'save/record/loss_acc_{:s}_{:s}_{:d}_{:s}.pt'.format(self.args.algorithm, self.args.notes, self.args.iteration, self.args.algorithm))
+                   self.args.save_path+'/save/record/loss_acc_{:s}_{:s}_{:d}_{:s}.pt'.format(self.args.algorithm, self.args.notes, self.args.iteration, self.args.algorithm))
         self.logger.info('Finished!\n')
         for i in range(self.args.node_num + 1):
             self.logger.info('Node{}: Best Accuracy = {:.2f}%'.format(i, self.acc_best[i]))
@@ -287,3 +287,54 @@ def Summary(args, logger):
     # print("iid:{},\tequal:{},\n".format(args.iid == 1, args.unequal == 0))
     logger.info("global epochs:{},\tlocal epochs:{}".format(args.R, args.E))
     logger.info("global_model:{},\tlocal model:{}".format(args.global_model, args.local_model))
+
+
+
+
+# 参考：https://www.cnblogs.com/wanghui-garcia/p/11393076.html
+import os, torchvision
+import torch.nn as nn
+import numpy as np
+import imageio
+import matplotlib.pyplot as plt
+from PIL import Image
+import torch
+
+
+def tensor2im(input_image, imtype=np.uint8):
+    """"将tensor的数据类型转成numpy类型，并反归一化.
+
+    Parameters:
+        input_image (tensor) --  输入的图像tensor数组
+        imtype (type)        --  转换后的numpy的数据类型
+    """
+    mean = [0.485,0.456,0.406] #自己设置的
+    std = [0.229,0.224,0.225]  #自己设置的
+    if not isinstance(input_image, np.ndarray):
+        if isinstance(input_image, torch.Tensor):  # get the data from a variable
+            image_tensor = input_image.data
+        else:
+            return input_image
+        image_numpy = image_tensor.cpu().float().numpy()  # convert it into a numpy array
+        if image_numpy.shape[0] == 1:  # grayscale to RGB
+            image_numpy = np.tile(image_numpy, (3, 1, 1))
+        for i in range(len(mean)):
+            image_numpy[i] = image_numpy[i] * std[i] + mean[i]
+        image_numpy = image_numpy * 255
+        image_numpy = np.transpose(image_numpy, (1, 2, 0))  # post-processing: tranpose and scaling
+    else:  # if it is a numpy array, do nothing
+        image_numpy = input_image
+    return image_numpy.astype(imtype)
+
+def save_img(im, path, size):
+    """im可是没经过任何处理的tensor类型的数据,将数据存储到path中
+
+    Parameters:
+        im (tensor) --  输入的图像tensor数组
+        path (str)  --  图像保存的路径
+        size (int)  --  一行有size张图,最好是2的倍数
+    """
+    im_grid = torchvision.utils.make_grid(im, size) #将batchsize的图合成一张图
+    im_numpy = tensor2im(im_grid) #转成numpy类型并反归一化
+    im_array = Image.fromarray(im_numpy)
+    im_array.save(path)

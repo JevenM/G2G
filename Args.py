@@ -71,6 +71,9 @@ def args_parser():
                         help='LR warm-up iterations (default:500)')
     # parser.add_argument('--label_smoothing', type=float, default=0.1, 
     #                     help='the rate of wrong label(default:0.2)')
+    parser.add_argument('--save_path', type=str, default='.',
+                        help='images_path for this run.')
+
 
     # for ALexnet2
     parser.add_argument('--lr0', type=float, default=0.0001, help='learning rate 0')

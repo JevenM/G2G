@@ -5,7 +5,7 @@ import torch
 from torchvision.utils import save_image
 from torchvision.models.feature_extraction import create_feature_extractor
 import os
-from utils import to_img, compute_distances
+from utils import to_img, compute_distances, save_img
 
 
 KL_Loss = nn.KLDivLoss(reduction='batchmean')
@@ -204,10 +204,12 @@ class Trainer(object):
 # =========================================== my ==================================================
 
 latent_space = 64
-images_path = './images/'
-temperature=0.5
+# images_path = './images/'
+# temperature用beta代替
+# temperature=0.5
 cls_epochs = 0
-alpha = 0.5
+# alpha用源代码中的alpha代替
+# alpha = 0.5
 
 def train_adv(node, args, logger, round):
     node.gen_model.to(node.device).train()
@@ -292,14 +294,14 @@ def train_adv(node, args, logger, round):
                 # [2*B, D]
                 out = torch.cat([embeddings_orig, embeddings_gen], dim=0)
                 # [2*B, 2*B]
-                sim_matrix = torch.exp(torch.mm(out, out.t().contiguous()) / temperature)
+                sim_matrix = torch.exp(torch.mm(out, out.t().contiguous()) / args.beta)
                 mask = (torch.ones_like(sim_matrix) - torch.eye(2 * batchsize, device=sim_matrix.device)).bool()
                 # [2*B, 2*B-1]
                 sim_matrix = sim_matrix.masked_select(mask).view(2 * batchsize, -1)
 
                 # 分子： *为对应位置相乘，也是点积
                 # compute loss
-                pos_sim = torch.exp(torch.sum(embeddings_orig * embeddings_gen, dim=-1) / temperature)
+                pos_sim = torch.exp(torch.sum(embeddings_orig * embeddings_gen, dim=-1) / args.beta)
                 # [2*B]
                 pos_sim = torch.cat([pos_sim, pos_sim], dim=0)
                 loss = (- torch.log(pos_sim / sim_matrix.sum(dim=-1))).mean()
@@ -315,15 +317,17 @@ def train_adv(node, args, logger, round):
             #     ))
             if round == 0 and iter==len(train_loader)-1:
                 real_images = to_img(real_images.cuda().data)
-                save_image(real_images, os.path.join(images_path, '_real_images.png'))
+                # save_image(real_images, os.path.join(images_path, '_real_images.png'))
+                save_img(real_images, os.path.join(args.images_path, '_real_images.png'), batchsize)
             if iter==len(train_loader)-1:
                 fake_images = to_img(fake_images.cuda().data)
-                save_image(fake_images, os.path.join(images_path, '_fake_images-{}.png'.format(round + 1)))
+                # save_image(fake_images, os.path.join(images_path, '_fake_images-{}.png'.format(round + 1)))
+                save_img(fake_images, os.path.join(args.images_path, '_fake_images-{}.png'.format(round + 1)), batchsize)
     # 测试生成器网络
     node.gen_model.eval()
 
-    simclr_save_path = os.path.join('./save/model/', str(node.num)+'_simclr.pth')
-    gen_save_path = os.path.join('./save/model/', str(node.num)+'_gen.pth')
+    simclr_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_simclr.pth')
+    gen_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_gen.pth')
 
     torch.save(node.cl_model.state_dict(), simclr_save_path)
     torch.save(node.gen_model.state_dict(), gen_save_path)
@@ -377,14 +381,14 @@ def train_adv(node, args, logger, round):
             _, outputs = node.clser(images)
             # print(outputs)
             loss_ce_true = CE_Loss(outputs, labels.to(node.device))  # 使用logits计算交叉熵损失
-            loss_ce = alpha * loss_ce_f + (1-alpha) * loss_ce_true
+            loss_ce = args.alpha * loss_ce_f + (1-args.alpha) * loss_ce_true
             loss_ce.backward()
             node.optm_cls.step()
             running_loss_t += loss_ce_true.item()
         
         logger.info('Epoch [%d/%d], Loss_t: %.4f, Loss_f: %.4f' % (epo+1, cls_epochs, running_loss_t / len(train_loader), running_loss_f / len(train_loader)))
     node.model = node.clser
-    cls_save_path = os.path.join('./save/model/', str(node.num)+'_clser.pth')
+    cls_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_clser.pth')
 
     torch.save(node.clser.state_dict(), cls_save_path)
     
