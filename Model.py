@@ -192,8 +192,12 @@ class AlexNet(nn.Module):
         super(AlexNet, self).__init__()
         alexnet_fetExtrac = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec)
         state_dict = torch.load("models/alexnet_caffe.pth.tar")
-        del state_dict["classifier.fc8.weight"]
-        del state_dict["classifier.fc8.bias"]
+
+        # for key, value in state_dict.items():
+        #     print(key, value.size())
+        # 这里修改
+        del state_dict["classifier.6.weight"]
+        del state_dict["classifier.6.bias"]
         alexnet_fetExtrac.load_state_dict(state_dict)
         alexnet__classifier = task_classifier(args.hidden_size, optim.SGD, args.lr0, args.momentum, args.weight_dec,
                                                 class_num=args.classes)
@@ -214,32 +218,33 @@ class feature_extractor(nn.Module):
         super(feature_extractor,self).__init__()
         self.num_classes = num_classes
         self.features = nn.Sequential(OrderedDict([
-            ("conv1",nn.Conv2d(3,96,kernel_size=11,stride=4)),
+            # 修改
+            ("0",nn.Conv2d(3,64,kernel_size=11,stride=4)),
             ("relu1",nn.ReLU(inplace=True)),
             ("pool1",nn.MaxPool2d(kernel_size=3,stride=2,ceil_mode=True)),
             ("norm1",nn.LocalResponseNorm(5,1.e-4,0.75)),
 
-            ("conv2",nn.Conv2d(96,256,kernel_size=5,padding=2,groups=2)),
+            ("3",nn.Conv2d(64,192,kernel_size=5,padding=2)),
             ("relu2",nn.ReLU(inplace=True)),
             ("pool2",nn.MaxPool2d(kernel_size=3,stride=2,ceil_mode=True)),
             ("norm2",nn.LocalResponseNorm(5,1.e-4,0.75)),
 
-            ("conv3",nn.Conv2d(256,384,kernel_size=3,padding=1)),
+            ("6",nn.Conv2d(192,384,kernel_size=3,padding=1)),
             ("relu3",nn.ReLU(inplace=True)),
 
-            ("conv4",nn.Conv2d(384,384,kernel_size=3,padding=1,groups=2)),
+            ("8",nn.Conv2d(384,256,kernel_size=3,padding=1)),
             ("relu4",nn.ReLU(inplace=True)),
 
-            ("conv5",nn.Conv2d(384,256,kernel_size=3,padding=1,groups=2)),
+            ("10",nn.Conv2d(256,256,kernel_size=3,padding=1)),
             ("relu5",nn.ReLU(inplace=True)),
             ("pool5",nn.MaxPool2d(kernel_size=3,stride=2,ceil_mode=True))
         ]))
         self.classifier = nn.Sequential(OrderedDict([
-            ("fc6", nn.Linear(256 * 6 * 6, 4096)),
+            ("1", nn.Linear(256 * 6 * 6, 4096)),
             ("relu6", nn.ReLU(inplace=True)),
             ("drop6", nn.Dropout()),
 
-            ("fc7", nn.Linear(4096, 4096)),
+            ("4", nn.Linear(4096, 4096)),
             ("relu7", nn.ReLU(inplace=True)),
             ("drop7", nn.Dropout())
         ]))
@@ -307,3 +312,92 @@ def Alexnet(args):
 def VGG16(args):
     model = VGGnet(feature_extract=True,num_classes=args.classes)
     return model
+
+class Generator(nn.Module):
+    def __init__(self, latent_space, num_classes, flat_img):
+        super(Generator, self).__init__()
+        self.gen = nn.Sequential(
+            nn.Linear(latent_space+num_classes, 128),
+            nn.LeakyReLU(0.2),
+            nn.Linear(128, 256),
+            nn.BatchNorm1d(256),
+            nn.LeakyReLU(0.2),
+            nn.Linear(256, 512),
+            nn.BatchNorm1d(512),
+            nn.LeakyReLU(0.2),
+            nn.Linear(512, 1024),
+            nn.BatchNorm1d(1024),
+            nn.LeakyReLU(0.2),
+            nn.Linear(1024, flat_img),
+            nn.Tanh()
+        )
+
+    def forward(self, x, y):
+        out = torch.cat((x, y), dim=1)
+        out = self.gen(out)
+        return out
+
+# 定义对比学习模型
+class SimCLR(nn.Module):
+    def __init__(self, in_channel, embedding_d):
+        super(SimCLR, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Conv2d(in_channels=in_channel, out_channels=64, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        self.projection_head = nn.Sequential(
+            nn.Linear(2304, 2048),
+            nn.ReLU(),
+            nn.Linear(2048, embedding_d)
+        )
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = x.view(x.size(0), -1)
+        embeddings = self.projection_head(x)
+        return x, embeddings
+
+class Discriminator(nn.Module):
+    def __init__(self, flat_img, num_classes):
+        super(Discriminator, self).__init__()
+        self.dis = nn.Sequential(
+            nn.Linear(flat_img+num_classes, 512),  # 输入特征数为784，输出为512
+            nn.BatchNorm1d(512),
+            nn.LeakyReLU(0.2),  # 进行非线性映射
+            nn.Linear(512, 256),  # 进行一个线性映射
+            nn.BatchNorm1d(256),
+            nn.LeakyReLU(0.2),
+            nn.Linear(256, 1)
+        )
+
+    def forward(self, x, y):
+        x = torch.cat((x, y), dim=1)
+        x = self.dis(x)
+        return x
+
+class Classifier(torch.nn.Module):
+    def __init__(self, simclr_model, num_class=10):
+        super(Classifier, self).__init__()
+        # encoder
+        self.encoder = simclr_model.encoder
+        # classifier
+        self.fc = nn.Linear(3 * 3 * 256, num_class, bias=True)
+
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+
+    def forward(self, x):
+        x = self.encoder(x)
+        feature = torch.flatten(x, start_dim=1)
+        out = self.fc(feature)
+        return feature, out

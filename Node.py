@@ -44,11 +44,26 @@ class Node(object):
     def __init__(self, num, train_data, test_data, args):
         self.args = args
         self.num = num + 1
+        # 初始化原型矩阵
+        self.prototypes = torch.zeros(self.args.classes, 2304).to(args.device)
+        self.prototypes_global = None
+        # 统计每个类别的样本数量
+        self.class_counts = torch.zeros(self.args.classes)
         self.device = self.args.device
         self.train_data = train_data
         self.test_data = test_data
         self.model = init_model(self.args.local_model,args).to(self.device)
         self.optimizer = init_optimizer(self.model, self.args)
+
+        self.gen_model = Model.Generator(64, 5, 225*225*3).to(self.device)
+        self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=0.0002, weight_decay=5e-4)
+        self.cl_model = Model.SimCLR(3, 128).to(self.device)
+        self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=0.0001, weight_decay=5e-4)
+        self.disc_model = Model.Discriminator(225*225*3, 5).to(self.device)
+        self.optm_disc = optim.Adam(self.disc_model.parameters(), lr=0.0002, weight_decay=5e-4)
+        self.clser = Model.Classifier(self.cl_model).to(self.device)
+        self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=0.001, weight_decay=5e-4)
+
         self.meme = init_model(self.args.global_model,args).to(self.device)
         self.meme_optimizer = init_optimizer(self.meme, self.args)
         self.Dict = self.meme.state_dict()
@@ -72,6 +87,8 @@ class Node(object):
     # def local_fork(self, global_node):
     #     self.model = copy.deepcopy(global_node.model).to(self.device)
     #     self.model_optimizer = init_optimizer(self.model, self.args)
+    def fork_proto(self, protos):
+        self.prototypes_global = protos
 
 
 class Global_Node(object):
@@ -79,7 +96,7 @@ class Global_Node(object):
         self.num = 0
         self.args = args
         self.device = self.args.device
-        self.model = init_model(self.args.global_model,args).to(self.device)
+        self.model = init_model(self.args.global_model, args).to(self.device)
         self.model_optimizer = init_optimizer(self.model, self.args)
         self.test_data = test_data
         self.Dict = self.model.state_dict()
@@ -97,6 +114,16 @@ class Global_Node(object):
             for i in range(len(Node_List)):
                 self.Dict[key] += Node_State_List[i][key]
             self.Dict[key] = self.Dict[key]/len(Node_List)
+        
+
+    def aggregate(self, Node_List):
+        Pro_List = [Node_List[i].prototypes for i in range(len(Node_List))]
+        stacked_tensor = torch.stack(Pro_List, dim=0)
+
+        # 沿着指定的维度求平均值
+        average_tensor = torch.mean(stacked_tensor, dim=0)
+        print(average_tensor.shape)
+        return average_tensor
 
     def fork(self, node):
         self.model = copy.deepcopy(node.meme).to(self.device)

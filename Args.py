@@ -6,7 +6,7 @@ def args_parser():
 
     # Total
     parser.add_argument('--algorithm', type=str, default='fed_mutual',
-                        help='Type of algorithms:{fed_mutual, fed_avg, normal}')
+                        help='Type of algorithms:{fed_mutual, fed_avg, normal, fed_adv}')
     parser.add_argument('--device', type=str, default='cuda:0',
                         help='device: {cuda, cpu}')
     parser.add_argument('--node_num', type=int, default=3,
@@ -25,8 +25,8 @@ def args_parser():
                         help='Type of global model: {LeNet5, MLP, CNN2, ResNet50,ResNet18,VGG16,Alexnet,Alexnet2}')
     parser.add_argument('--local_model', type=str, default='ResNet50',
                         help='Type of local model: {LeNet5, MLP, CNN2, ResNet50,ResNet18,VGG16,Alexnet,Alexnet2}')
-    parser.add_argument('--catfish', type=str, default=None,
-                        help='Type of local model: {None, LeNet5, MLP, CNN2, ResNet50}')
+    # parser.add_argument('--catfish', type=str, default=None,
+    #                     help='Type of local model: {None, LeNet5, MLP, CNN2, ResNet50}')
 
     # Data
     parser.add_argument('--dataset', type=str, default='pacs',
@@ -47,8 +47,8 @@ def args_parser():
                         help='optimizer: {sgd, adam}')
     parser.add_argument('--lr', type=float, default=0.0008,
                         help='learning rate')
-    parser.add_argument('--lr_step', type=int, default=10,
-                        help='learning rate decay step size')
+    # parser.add_argument('--lr_step', type=int, default=10,
+    #                     help='learning rate decay step size')
     parser.add_argument('--stop_decay', type=int, default=50,
                         help='round when learning rate stop decay')
     parser.add_argument('--momentum', type=float, default=0.9,

@@ -16,6 +16,9 @@ Code to reproduce the experiments of **G2G:Generalized Learning by Cross-Domain 
 * Download pre-trained AlexNet from https://download.pytorch.org/models/alexnet-owt-4df8aa71.pth and move it to models/
 * Download pre-trained Resnet50 from https://download.pytorch.org/models/resnet50-19c8e357.pth and move it to models/
 * Download pre-trained VGG16 https://download.pytorch.org/models/vgg16-397923af.pth and move it to models/
+
+
+下面的三个数据集都是只有4个domain，所以设置node_num=3，每个客户端一个source domain，另一个作为target domain
 ### Running ours on VLCS
 ``` 
 pymao main_warm.py --node_num 3  --device cuda:0 --dataset vlcs --classes 5 --lr 0.0008 --global_model Alexnet --local_model Alexnet --algorithm fed_mutual --R 50 --E 7 --pretrained True --batch_size 64 --iteration 0 

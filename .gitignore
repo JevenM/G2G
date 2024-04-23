@@ -1,3 +1,7 @@
 datasets/
 models/
 *.pyc
+*.pt
+save/
+*.png
+*.txt

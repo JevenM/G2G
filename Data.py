@@ -16,48 +16,38 @@ class Data(object):
             self.trainset, self.testset = None, None
             if iteration == 0:
                 client = ['cartoon', 'sketch',  'art_painting','photo']
-                self.train_loader, self.test_loader,self.target_loader = get_pacs_loaders(args,client)
             if iteration == 1:
                 client=[ 'photo','cartoon','sketch','art_painting']
-                self.train_loader, self.test_loader,self.target_loader = get_pacs_loaders(args,client)
             if iteration == 2:
                 client=[ 'sketch','photo','art_painting','cartoon']
-                self.train_loader, self.test_loader,self.target_loader = get_pacs_loaders(args,client)
-            
             if iteration == 3:
                 client=[ 'photo','cartoon','art_painting','sketch']
+            if client is not None:
                 self.train_loader, self.test_loader,self.target_loader = get_pacs_loaders(args,client) 
 
         if args.dataset == 'vlcs':
             if iteration == 0:
-                self.train_loader, self.test_loader,self.target_loader = get_vlcs_loaders(args,
-                                                        client=['SUN09', 'Caltech101','LabelMe','VOC2007'])
+                client=['SUN09', 'Caltech101','LabelMe','VOC2007']
             if iteration == 1:
-                self.train_loader, self.test_loader,self.target_loader = get_vlcs_loaders(args,
-                                                        client=['Caltech101','VOC2007','SUN09', 'LabelMe'])
+                client=['Caltech101','VOC2007','SUN09', 'LabelMe']
             if iteration == 2:
-                self.train_loader, self.test_loader,self.target_loader = get_vlcs_loaders(args,
-                                                        client=['SUN09', 'LabelMe','VOC2007','Caltech101'])  
+                client=['SUN09', 'LabelMe','VOC2007','Caltech101']
             if iteration == 3:
-                self.train_loader, self.test_loader,self.target_loader = get_vlcs_loaders(args,
-                                                        client=['LabelMe','Caltech101','VOC2007','SUN09'])
+                client=['LabelMe','Caltech101','VOC2007','SUN09']
+            if client is not None:
+                self.train_loader, self.test_loader,self.target_loader, self.target_data = get_vlcs_loaders(args, client, logger)
                                                                
-            
-            
         if args.dataset == 'office-home':
             if iteration == 0:
-                self.train_loader, self.test_loader,self.target_loader = get_office_loaders(args,                                                     
-                                                        client=['Real World','Product','Clipart','Art'])                                                        
+                client=['Real World','Product','Clipart','Art']                                                                                                 
             if iteration == 1:
-                self.train_loader, self.test_loader,self.target_loader = get_office_loaders(args,
-                                                        client=[ 'Real World','Product','Art','Clipart'])
-                                                       
+                client=[ 'Real World','Product','Art','Clipart']                                      
             if iteration == 2:
-                self.train_loader, self.test_loader,self.target_loader = get_office_loaders(args,
-                                                        client=['Real World','Art','Clipart', 'Product'])                             
+                client=['Real World','Art','Clipart', 'Product']                          
             if iteration == 3:
-                self.train_loader, self.test_loader,self.target_loader = get_office_loaders(args,
-                                                        client=['Clipart', 'Art','Product','Real World'])
+                client=['Clipart', 'Art','Product','Real World']
+            if client is not None:
+                self.train_loader, self.test_loader,self.target_loader = get_office_loaders(args,client)
 
         logger.info('CLIENT_ORDER{}'.format(client))
 
@@ -77,7 +67,7 @@ class Loader_dataset(data.Dataset):
         data, label = self.dataset.__getitem__(idx)
         return data, label
 
-def get_vlcs_loaders(args, client):
+def get_vlcs_loaders(args, client, logger):
     path_root = './datasets/VLCS/VLCS/'
     trans0 = transforms.Compose([transforms.RandomResizedCrop(225, scale=(0.7, 1.0)),
                                  transforms.RandomHorizontalFlip(),
@@ -99,10 +89,11 @@ def get_vlcs_loaders(args, client):
         valid_datas[i] = Loader_dataset(path=valid_path[i], tranforms=trans1)
         valid_loaders[i] = DataLoader(valid_datas[i], args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
     target_path = path_root + client[3] + '/val'
+    logger.info(f"unseen domain: {client[3]}")
     target_data = Loader_dataset(target_path, trans1)
     target_loader = DataLoader(target_data, args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
-    print(client,'\n')
-    return train_loaders, valid_loaders, target_loader
+    # logger.info(f'client list: {client}')
+    return train_loaders, valid_loaders, target_loader, target_data
 
 class Loader_dataset_pacs(data.Dataset):
     def __init__(self, path, tranforms):
