@@ -27,10 +27,10 @@ log_name = os.path.join(save_dir, 'train.log')
 if not os.path.exists(images_path):
     os.makedirs(images_path)
 
-save_model_path = os.path.join(save_dir, '/save/model')
+save_model_path = os.path.join(save_dir, 'save/model')
 if not os.path.exists(save_model_path):
     os.makedirs(save_model_path)
-save_record_path = os.path.join(save_dir, '/save/recore')
+save_record_path = os.path.join(save_dir, 'save/recore')
 if not os.path.exists(save_record_path):
     os.makedirs(save_record_path)
 

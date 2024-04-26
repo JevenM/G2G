@@ -29,7 +29,7 @@ def args_parser():
     #                     help='Type of local model: {None, LeNet5, MLP, CNN2, ResNet50}')
 
     # Data
-    parser.add_argument('--dataset', type=str, default='pacs',
+    parser.add_argument('--dataset', type=str, default='vlcs',
                         help='datasets: {air_ori, air, pacs, cifar100, cifar10, femnist,office-home, mnist}')
     parser.add_argument('--batch_size', type=int, default=32,
                         help='batch_size')
@@ -72,7 +72,7 @@ def args_parser():
     # parser.add_argument('--label_smoothing', type=float, default=0.1, 
     #                     help='the rate of wrong label(default:0.2)')
     parser.add_argument('--save_path', type=str, default='.',
-                        help='images_path for this run.')
+                        help='path for this run.')
 
 
     # for ALexnet2

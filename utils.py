@@ -177,7 +177,7 @@ class Recorder(object):
 def dimension_reduction(node, Data, round):
     model_trunc = create_feature_extractor(node.clser, return_nodes={'encoder': 'semantic_feature'})
 
-    data_loader = torch.utils.data.DataLoader(node.test_dataset, batch_size=1, shuffle=False)
+    data_loader = torch.utils.data.DataLoader(node.test_data, batch_size=1, shuffle=False)
     encoding_array = []
     labels_list = []
     for batch_idx, (images, labels) in enumerate(data_loader):
@@ -223,7 +223,7 @@ def dimension_reduction(node, Data, round):
         plt.xticks([])
         plt.yticks([])
 
-        dim_reduc_save_path = os.path.join('./save/', f'{node.num}_{round}_clser_mnist_语义特征{method}二维降维可视化.pdf')
+        dim_reduc_save_path = os.path.join(node.args'./save/', f'{node.num}_{round}_clser_mnist_语义特征{method}二维降维可视化.pdf')
 
         plt.savefig(dim_reduc_save_path, dpi=300, bbox_inches='tight') # 保存图像
 
@@ -337,4 +337,4 @@ def save_img(im, path, size):
     im_grid = torchvision.utils.make_grid(im, size) #将batchsize的图合成一张图
     im_numpy = tensor2im(im_grid) #转成numpy类型并反归一化
     im_array = Image.fromarray(im_numpy)
-    im_array.save(path)
+    im_array.save(path)0

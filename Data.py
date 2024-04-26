@@ -93,7 +93,7 @@ def get_vlcs_loaders(args, client, logger):
     target_data = Loader_dataset(target_path, trans1)
     target_loader = DataLoader(target_data, args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
     # logger.info(f'client list: {client}')
-    return train_loaders, valid_loaders, target_loader, target_data
+    return train_loaders, valid_loaders, target_loader, target_data.dataset
 
 class Loader_dataset_pacs(data.Dataset):
     def __init__(self, path, tranforms):

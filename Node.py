@@ -61,7 +61,7 @@ class Node(object):
         self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=0.0001, weight_decay=5e-4)
         self.disc_model = Model.Discriminator(225*225*3, 5).to(self.device)
         self.optm_disc = optim.Adam(self.disc_model.parameters(), lr=0.0002, weight_decay=5e-4)
-        self.clser = Model.Classifier(self.cl_model).to(self.device)
+        self.clser = Model.Classifier(self.cl_model, args.classes).to(self.device)
         self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=0.001, weight_decay=5e-4)
 
         self.meme = init_model(self.args.global_model,args).to(self.device)

@@ -318,11 +318,11 @@ def train_adv(node, args, logger, round):
             if round == 0 and iter==len(train_loader)-1:
                 real_images = to_img(real_images.cuda().data)
                 # save_image(real_images, os.path.join(images_path, '_real_images.png'))
-                save_img(real_images, os.path.join(args.images_path, '_real_images.png'), batchsize)
+                save_img(real_images, os.path.join(args.save_path+"/gen_images/", '_real_images.png'), batchsize)
             if iter==len(train_loader)-1:
                 fake_images = to_img(fake_images.cuda().data)
                 # save_image(fake_images, os.path.join(images_path, '_fake_images-{}.png'.format(round + 1)))
-                save_img(fake_images, os.path.join(args.images_path, '_fake_images-{}.png'.format(round + 1)), batchsize)
+                save_img(fake_images, os.path.join(args.save_path+"/gen_images/", '_fake_images-{}.png'.format(round + 1)), batchsize)
     # 测试生成器网络
     node.gen_model.eval()
 

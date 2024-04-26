@@ -386,7 +386,7 @@ class Discriminator(nn.Module):
         return x
 
 class Classifier(torch.nn.Module):
-    def __init__(self, simclr_model, num_class=10):
+    def __init__(self, simclr_model, num_class=5):
         super(Classifier, self).__init__()
         # encoder
         self.encoder = simclr_model.encoder
