@@ -354,7 +354,8 @@ def train_adv(node, args, logger, round):
     else:
         node.prototypes = node.prototypes_global
     # node.prototypes = node.prototypes.to(node.device)
-    node.prototypes.requires_grad_(False)
+    # node.prototypes.requires_grad_(False)
+    node.prototypes = node.prototypes.detach()
     # 训练分类器
     node.clser.train()
     for epo in range(cls_epochs):

@@ -223,7 +223,7 @@ def dimension_reduction(node, Data, round):
         plt.xticks([])
         plt.yticks([])
 
-        dim_reduc_save_path = os.path.join(node.args'./save/', f'{node.num}_{round}_clser_mnist_语义特征{method}二维降维可视化.pdf')
+        dim_reduc_save_path = os.path.join(node.args.save_path+'/save/', f'{node.num}_{round}_clser_mnist_语义特征{method}二维降维可视化.pdf')
 
         plt.savefig(dim_reduc_save_path, dpi=300, bbox_inches='tight') # 保存图像
 
@@ -337,4 +337,4 @@ def save_img(im, path, size):
     im_grid = torchvision.utils.make_grid(im, size) #将batchsize的图合成一张图
     im_numpy = tensor2im(im_grid) #转成numpy类型并反归一化
     im_array = Image.fromarray(im_numpy)
-    im_array.save(path)0
+    im_array.save(path)

@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import torch
 from torchvision import models
 from torch import optim
+import copy
 
 class LeNet5(nn.Module):
     def __init__(self):
@@ -339,8 +340,9 @@ class Generator(nn.Module):
 
 # 定义对比学习模型
 class SimCLR(nn.Module):
-    def __init__(self, in_channel, embedding_d):
+    def __init__(self, args, in_channel, embedding_d):
         super(SimCLR, self).__init__()
+        '''
         self.encoder = nn.Sequential(
             nn.Conv2d(in_channels=in_channel, out_channels=64, kernel_size=3, stride=2, padding=1),
             nn.BatchNorm2d(64),
@@ -355,15 +357,40 @@ class SimCLR(nn.Module):
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
-        self.projection_head = nn.Sequential(
-            nn.Linear(2304, 2048),
-            nn.ReLU(),
-            nn.Linear(2048, embedding_d)
-        )
+        '''
+        self.encoder = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec)
+        state_dict = torch.load("models/alexnet_caffe.pth.tar")
+        del state_dict["classifier.6.weight"]
+        del state_dict["classifier.6.bias"]
+        self.encoder.load_state_dict(state_dict)
+
+        # self.projection_head = nn.Sequential(
+        #     nn.Linear(2304, 2048),
+        #     nn.ReLU(),
+        #     nn.Linear(2048, embedding_d)
+        # )
+
+        self.projection_head = nn.Sequential(OrderedDict([
+            ("1", nn.Linear(4096, 4096)),
+            ("relu6", nn.ReLU(inplace=True)),
+            ("drop6", nn.Dropout()),
+
+            ("4", nn.Linear(4096, embedding_d)),
+            ("relu7", nn.ReLU(inplace=True)),
+            ("drop7", nn.Dropout())
+        ]))
+
+        self.initial_params()
+
+    def initial_params(self):
+        for layer in self.modules():
+            if isinstance(layer,torch.nn.Linear):
+                init.xavier_uniform_(layer.weight,0.1)
+                layer.bias.data.zero_()
 
     def forward(self, x):
-        x = self.encoder(x)
-        x = x.view(x.size(0), -1)
+        x = self.encoder(x*57.6)
+        x = x.view((x.size(0), -1))
         embeddings = self.projection_head(x)
         return x, embeddings
 
@@ -386,12 +413,14 @@ class Discriminator(nn.Module):
         return x
 
 class Classifier(torch.nn.Module):
-    def __init__(self, simclr_model, num_class=5):
+    def __init__(self, args, simclr_model, num_class=5):
         super(Classifier, self).__init__()
         # encoder
         self.encoder = simclr_model.encoder
         # classifier
-        self.fc = nn.Linear(3 * 3 * 256, num_class, bias=True)
+        # self.fc = nn.Linear(3 * 3 * 256, num_class, bias=True)
+        self.fc = task_classifier(args.hidden_size, optim.SGD, args.lr0, args.momentum, args.weight_dec,
+                                                class_num=args.classes)
 
         for param in self.encoder.parameters():
             param.requires_grad = False
