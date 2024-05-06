@@ -27,10 +27,17 @@ def args_parser():
                         help='Type of local model: {LeNet5, MLP, CNN2, ResNet50,ResNet18,VGG16,Alexnet,Alexnet2}')
     # parser.add_argument('--catfish', type=str, default=None,
     #                     help='Type of local model: {None, LeNet5, MLP, CNN2, ResNet50}')
-
+    parser.add_argument('--discr_e', type=int, default=1,
+                        help='')
+    parser.add_argument('--gen_e', type=int, default=3,
+                        help='')
+    parser.add_argument('--simclr_e', type=int, default=1,
+                        help='')
+    parser.add_argument('--cls_epochs', type=int, default=150,
+                        help='')
     # Data
     parser.add_argument('--dataset', type=str, default='vlcs',
-                        help='datasets: {air_ori, air, pacs, cifar100, cifar10, femnist,office-home, mnist}')
+                        help='datasets: {air_ori, air, pacs, cifar100, cifar10, femnist, office-home, mnist, rotatedmnist}')
     parser.add_argument('--batch_size', type=int, default=32,
                         help='batch_size')
     parser.add_argument('--split', type=int, default=5,

@@ -207,7 +207,6 @@ latent_space = 64
 # images_path = './images/'
 # temperature用beta代替
 # temperature=0.5
-cls_epochs = 0
 # alpha用源代码中的alpha代替
 # alpha = 0.5
 
@@ -216,13 +215,9 @@ def train_adv(node, args, logger, round):
     node.cl_model.to(node.device).train()
     node.disc_model.to(node.device).train()
     train_loader = node.train_data
-    total_loss = 0.0
-    avg_loss = 0.0
-    correct = 0.0
-    acc = 0.0
-    description = "Node{:d}: loss={:.4f} acc={:.2f}%"
     with tqdm(train_loader) as epochs:
         d_loss,g_loss,ls = 0,0,0
+        data_iter = iter(node.target_loader)
         for iter, (real_images, labels) in enumerate(epochs):
             batchsize = real_images.size(0)
             real_images = real_images.to(node.device)
@@ -233,7 +228,7 @@ def train_adv(node, args, logger, round):
             # 生成器生成样本的标签为0
             fake_labels = torch.zeros(batchsize, 1).to(node.device)
             
-            for k in range(1):
+            for k in range(args.discr_e):
                 # 训练辨别器
                 node.optm_disc.zero_grad()
                 # real_outputs = discriminator(real_images.view(batchsize, -1))
@@ -244,6 +239,16 @@ def train_adv(node, args, logger, round):
                 # fake_images = gen(z).to(device)
                 fake_images = node.gen_model(z, y)
 
+                try:
+                    target_image, tar_y = next(data_iter)
+                    target_image = target_image.to(node.device)
+                    bs_t = target_image.size(0)
+                except StopIteration:
+                    break
+                true_labels_t = torch.ones(bs_t, 1).to(node.device)
+                tar_outputs = node.disc_model(target_image.view(bs_t, -1), torch.zeros(bs_t, num_classes).to(device))
+                loss_real_t = criterion_BCE(tar_outputs, true_labels_t)
+
                 # print(fake_images[0])
                 fake_outputs = node.disc_model(fake_images.to(node.device), y)
                 # fake_outputs = discriminator(fake_images.to(device))
@@ -251,14 +256,14 @@ def train_adv(node, args, logger, round):
                 loss_fake = criterion_BCE(fake_outputs, fake_labels)
                 fake_scores = fake_outputs  # 得到假图片的判别值，对于判别器来说，假图片的损失越接近0越好
 
-                loss_disc = (loss_real + loss_fake) / 2
+                loss_disc = (loss_real + loss_fake + loss_real_t) / 3
                 loss_disc.backward()
                 node.optm_disc.step()
                 # print(f'Epoch [{epoch+1}/10] [{k+1/str(discr_e)}], Loss Disc: {loss_disc.item()}')
             d_loss += loss_disc.item()
 
             # 训练生成器
-            for i in range(1):
+            for i in range(args.gen_e):
                 node.optm_gen.zero_grad()
                 gen_images = node.gen_model(z, y)
                 gen_outputs = node.disc_model(gen_images, y)
@@ -271,7 +276,7 @@ def train_adv(node, args, logger, round):
             g_loss += loss_gen.item()
 
 
-            for k in range(1):
+            for k in range(args.simclr_e):
                 node.optm_cl.zero_grad()
 
                 # 训练编码器
@@ -323,6 +328,10 @@ def train_adv(node, args, logger, round):
                 fake_images = to_img(fake_images.cuda().data)
                 # save_image(fake_images, os.path.join(images_path, '_fake_images-{}.png'.format(round + 1)))
                 save_img(fake_images, os.path.join(args.save_path+"/gen_images/", '_fake_images-{}.png'.format(round + 1)), batchsize)
+        logger.info('Epoch[{}/{}], d_loss:{:.6f}, g_loss:{:.6f}, loss:{:.6f}, D real: {:.6f}, D fake: {:.6f}'.format(round, args.E,
+        d_loss/len(train_loader), g_loss/len(train_loader), ls/len(train_loader), real_scores.data.mean(), fake_scores.data.mean()  # 打印的是真实图片的损失均值
+        ))
+
     # 测试生成器网络
     node.gen_model.eval()
 
@@ -358,7 +367,7 @@ def train_adv(node, args, logger, round):
     node.prototypes = node.prototypes.detach()
     # 训练分类器
     node.clser.train()
-    for epo in range(cls_epochs):
+    for epo in range(args.cls_epochs):
         running_loss_t, running_loss_f = 0.0, 0.0
         loss_ce = 0
         for images, labels in train_loader:
@@ -387,7 +396,7 @@ def train_adv(node, args, logger, round):
             node.optm_cls.step()
             running_loss_t += loss_ce_true.item()
         
-        logger.info('Epoch [%d/%d], Loss_t: %.4f, Loss_f: %.4f' % (epo+1, cls_epochs, running_loss_t / len(train_loader), running_loss_f / len(train_loader)))
+        logger.info('Epoch [%d/%d], Loss_t: %.4f, Loss_f: %.4f' % (epo+1, args.cls_epochs, running_loss_t / len(train_loader), running_loss_f / len(train_loader)))
     node.model = node.clser
     cls_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_clser.pth')
 

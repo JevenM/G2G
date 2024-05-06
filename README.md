@@ -32,3 +32,8 @@ pymao main_warm.py --node_num 3  --device cuda:0 --dataset pacs --classes 7 --lr
 pymao main_warm.py --node_num 3 --device cuda:0 --dataset office-home --classes 65 --lr 0.0008 --global_model ResNet50 --local_model ResNet50 --algorithm fed_mutual --R 50 --E 7 --batch_size 32 --iteration 0 
 ```
 
+### My
+
+```
+pymao main_warm.py --node_num 3  --device cuda:0 --dataset vlcs --classes 5 --lr 0.0008 --global_model Alexnet --local_model Alexnet --algorithm fed_adv --R 50 --E 7 --pretrained True --batch_size 64 --iteration 0 
+```

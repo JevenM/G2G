@@ -41,7 +41,7 @@ def weights_zero(model):
 
 
 class Node(object):
-    def __init__(self, num, train_data, test_data, args):
+    def __init__(self, num, train_data, test_data, args, target_load=None):
         self.args = args
         self.num = num + 1
         # 初始化原型矩阵
@@ -52,6 +52,7 @@ class Node(object):
         self.device = self.args.device
         self.train_data = train_data
         self.test_data = test_data
+        self.target_loader = target_load
         self.model = init_model(self.args.local_model,args).to(self.device)
         self.optimizer = init_optimizer(self.model, self.args)
 

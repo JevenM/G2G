@@ -2,7 +2,7 @@ import torch
 from Node import Node, Global_Node
 from Args import args_parser
 from Data import Data
-from utils import LR_scheduler, Recorder, Summary, dimension_reduction
+from utils import LR_scheduler, Recorder, exp_details, Summary, dimension_reduction
 from Trainer import Trainer
 from log import logger_config, set_random_seed
 from datetime import datetime
@@ -30,7 +30,7 @@ if not os.path.exists(images_path):
 save_model_path = os.path.join(save_dir, 'save/model')
 if not os.path.exists(save_model_path):
     os.makedirs(save_model_path)
-save_record_path = os.path.join(save_dir, 'save/recored')
+save_record_path = os.path.join(save_dir, 'save/record')
 if not os.path.exists(save_record_path):
     os.makedirs(save_record_path)
 
@@ -41,12 +41,14 @@ logger = logger_config(log_path=log_name, logging_name=args.algorithm)
 args.device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
 logger.info(f'Running on {args.device}')
 
+exp_details(args, logger)
+
 Data = Data(args, logger)
 
 
 # init nodes
 Global_node = Global_Node(Data.target_loader, args)
-Node_List = [Node(k, Data.train_loader[k], Data.test_loader[k], args) for k in range(args.node_num)]
+Node_List = [Node(k, Data.train_loader[k], Data.test_loader[k], args, Data.target_loader) for k in range(args.node_num)]
 # Catfish(Node_List, args)
 
 recorder = Recorder(args,logger)
@@ -62,12 +64,15 @@ for rounds in range(args.R):
             Node_List[k].fork(Global_node)
         for epoch in range(args.E):
             Train(Node_List[k],args,logger,rounds)
-        if args.algorithm != 'fed_adv': 
+        if args.algorithm == 'fed_adv':
+            recorder.validate(Node_List[k])
+            recorder.test_on_target(Node_List[k])
+        else:
             recorder.printer(Node_List[k])
             Global_node.fork(Node_List[k])
             recorder.printer(Global_node)
             recorder.validate(Global_node)
-        recorder.validate(Node_List[k])
+        
         if args.algorithm == 'fed_adv' and rounds == args.R-1:
             dimension_reduction(Node_List[k], Data, rounds)
     if args.algorithm == 'fed_adv':
