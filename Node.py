@@ -45,7 +45,11 @@ class Node(object):
         self.args = args
         self.num = num + 1
         # 初始化原型矩阵
-        self.prototypes = torch.zeros(self.args.classes, 4096).to(args.device)
+        if args.dataset == 'rotatedmnist':
+            dim = 1024
+        else:
+            dim = 4096
+        self.prototypes = torch.zeros(self.args.classes, dim).to(args.device)
         self.prototypes_global = None
         # 统计每个类别的样本数量
         self.class_counts = torch.zeros(self.args.classes)
@@ -55,12 +59,17 @@ class Node(object):
         self.target_loader = target_load
         self.model = init_model(self.args.local_model,args).to(self.device)
         self.optimizer = init_optimizer(self.model, self.args)
-
-        self.gen_model = Model.Generator(64, 5, 225*225*3).to(self.device)
+        if args.dataset == 'rotatedmnist':
+            flatten_dim = 28*28
+            in_channel = 1
+        else:
+            flatten_dim = 225*225*3
+            in_channel = 3
+        self.gen_model = Model.Generator(64, args.classes, flatten_dim).to(self.device)
         self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=0.0002, weight_decay=5e-4)
-        self.cl_model = Model.SimCLR(args, 3, 128).to(self.device)
+        self.cl_model = Model.SimCLR(args, in_channel, 128).to(self.device)
         self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=0.0001, weight_decay=5e-4)
-        self.disc_model = Model.Discriminator(225*225*3, 5).to(self.device)
+        self.disc_model = Model.Discriminator(flatten_dim, args.classes).to(self.device)
         self.optm_disc = optim.Adam(self.disc_model.parameters(), lr=0.0002, weight_decay=5e-4)
         self.clser = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
         self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=0.001, weight_decay=5e-4)

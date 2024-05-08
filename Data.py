@@ -27,7 +27,7 @@ class Data(object):
             if iteration == 5:
                 client = [75, 0, 15, 30, 45, 60]
             if client is not None:
-                self.train_loader, self.test_loader,self.target_loader, self.target_data = get_rmnist_loaders(args,client,logger) 
+                self.train_loader, self.test_loader,self.target_loader, self.classes, self.class_to_idx = get_rmnist_loaders(args,client,logger) 
 
         if args.dataset == 'pacs':
             self.trainset, self.testset = None, None
@@ -103,6 +103,8 @@ class MultipleEnvironmentMNIST(MultipleDomainDataset):
         original_labels = original_labels[shuffle]
 
         self.datasets = []
+        self.classes = original_dataset_tr.classes
+        self.class_to_idx = original_dataset_tr.class_to_idx
 
         # 每隔6个数据形成一个列表，将数组切片为6个子列表，每个列表根据environments[i]旋转相应角度
         for i in range(len(environments)):
@@ -159,7 +161,7 @@ def get_rmnist_loaders(args, client, logger):
         dataset = data.datasets[s_domain_idx]
         train_len = int(len(dataset) * 0.9)
         test_len = len(dataset) - train_len
-        print(train_len, test_len)
+        # print(train_len, test_len)
         train_datas[s_domain_idx], valid_datas[s_domain_idx] = random_split(dataset, [train_len,test_len], generator=torch.Generator().manual_seed(0))
         # change the transform of test split 
         if hasattr(valid_datas[s_domain_idx].dataset,'transform'):
@@ -174,7 +176,7 @@ def get_rmnist_loaders(args, client, logger):
     target_data = data.datasets[target_domain_idx] #30度
     target_loader = DataLoader(target_data, batch_size=args.batch_size, shuffle=False, num_workers=args.workers,pin_memory=args.pin)
     # logger.info(f'client list: {client}')
-    return train_loaders, valid_loaders, target_loader, target_loader.dataset
+    return train_loaders, valid_loaders, target_loader, data.classes, data.class_to_idx
 
 
 def get_vlcs_loaders(args, client, logger):

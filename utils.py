@@ -117,9 +117,9 @@ class Recorder(object):
 
             if true_labels != []:
                 accuracy1 = accuracy_score(true_labels, pred_labels)
-                print(f'pseudo Accuracy: {accuracy1}')
+                print(f'c{node.num} on Source: pseudo Accuracy: {accuracy1}')
                 accuracy2 = accuracy_score(true_labels, out_labels)
-                print(f'test Accuracy: {accuracy2}')
+                print(f'c{node.num} on Source: test Accuracy: {accuracy2}')
                 acc = max(accuracy1, accuracy2) * 100
             else:
                 total_loss = total_loss / (idx + 1)
@@ -159,9 +159,9 @@ class Recorder(object):
         true_labels = []
         pred_labels = []
         out_labels = []
-        # 测试编码器的准确率在源域
+        # 测试编码器的准确率在目标域
         with torch.no_grad():
-            for idx, (data, target) in enumerate(node.test_data):
+            for idx, (data, target) in enumerate(node.target_loader):
                 data, target = data.to(node.device), target.to(node.device)
                 output = node.model(data)
                 features, outputs = output
@@ -175,11 +175,11 @@ class Recorder(object):
 
 
             accuracy1 = accuracy_score(true_labels, pred_labels)
-            print(f'pseudo Accuracy: {accuracy1}')
+            print(f'c{node.num} on Target: pseudo Accuracy: {accuracy1}')
             accuracy2 = accuracy_score(true_labels, out_labels)
-            print(f'test Accuracy: {accuracy2}')
+            print(f'c{node.num} on Target: test Accuracy: {accuracy2}')
             acc = max(accuracy1, accuracy2) * 100
-            self.logger.info(f"The best Acc on Target domain is {acc}%")
+            self.logger.info(f"The best Acc of c{node.num} on Target domain is {acc}%")
             
 
     def log(self, node):
@@ -205,7 +205,7 @@ class Recorder(object):
 def dimension_reduction(node, Data, round):
     model_trunc = create_feature_extractor(node.clser, return_nodes={'encoder': 'semantic_feature'})
     #1 源域
-    data_loader = torch.utils.data.DataLoader(node.test_data, batch_size=1, shuffle=False)
+    data_loader = torch.utils.data.DataLoader(node.test_data.dataset, batch_size=1, shuffle=False)
     encoding_array = []
     labels_list = []
     for batch_idx, (images, labels) in enumerate(data_loader):
@@ -215,12 +215,12 @@ def dimension_reduction(node, Data, round):
         encoding_array.append(feature)
     encoding_array = np.array(encoding_array)
     # 保存为本地的 npy 文件
-    np.save(os.path.join(node.args.save_path+'/save/', f'{node.num}_{round}_clser源域{Data.client[node.num-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array)
+    np.save(os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser源域{Data.client[node.num-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array)
 
 
     marker_list = ['.', ',', 'o', 'v', '^', '<', '>', '1', '2', '3', '4', '8', 's', 'p', 'P', '*', 'h', 'H', '+', 'x', 'X', 'D', 'd', '|', '_', 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-    class_list = Data.target_data.classes
-    class_to_idx = Data.target_data.class_to_idx
+    class_list = Data.classes
+    class_to_idx = Data.class_to_idx
     n_class = len(class_list) # 测试集标签类别数
     palette = sns.hls_palette(n_class) # 配色方案
     sns.palplot(palette)
@@ -250,54 +250,54 @@ def dimension_reduction(node, Data, round):
         plt.xticks([])
         plt.yticks([])
 
-        dim_reduc_save_path = os.path.join(node.args.save_path+'/save/', f'{node.num}_{round}_clser_{node.args.dataset}_源域{Data.client[node.num-1]}语义特征{method}二维降维可视化.pdf')
+        dim_reduc_save_path = os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser_{node.args.dataset}_源域{Data.client[node.num-1]}语义特征{method}二维降维可视化.pdf')
 
         plt.savefig(dim_reduc_save_path, dpi=300, bbox_inches='tight') # 保存图像
 
-        #1 目标域
-        data_loader_t = torch.utils.data.DataLoader(node.target_loader.dataset, batch_size=1, shuffle=False)
-        encoding_array = []
-        labels_list = []
-        for batch_idx, (images, labels) in enumerate(data_loader_t):
-            images, labels = images.to(node.device), labels.to(node.device)
-            # print(labels)
-            # one_hot_labels = torch.nn.functional.one_hot(labels, num_classes=num_classes)
-            # labels = labels.unsqueeze(1)
-            # print(labels)
-            labels_list.append(labels.item())
-            feature = model_trunc(images)['semantic_feature'].squeeze().flatten().detach().cpu().numpy() # 执行前向预测，得到 avgpool 层输出的语义特征
-            encoding_array.append(feature)
-        encoding_array = np.array(encoding_array)
-        # 保存为本地的 npy 文件
-        np.save(os.path.join(node.args.save_path+'/save/', f'{node.num}_{round}_clser目标域{Data.client[-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array)
+    #1 目标域
+    data_loader_t = torch.utils.data.DataLoader(node.target_loader.dataset, batch_size=1, shuffle=False)
+    encoding_array_ = []
+    labels_list = []
+    for batch_idx, (images, labels) in enumerate(data_loader_t):
+        images, labels = images.to(node.device), labels.to(node.device)
+        # print(labels)
+        # one_hot_labels = torch.nn.functional.one_hot(labels, num_classes=num_classes)
+        # labels = labels.unsqueeze(1)
+        # print(labels)
+        labels_list.append(labels.item())
+        feature = model_trunc(images)['semantic_feature'].squeeze().flatten().detach().cpu().numpy() # 执行前向预测，得到 avgpool 层输出的语义特征
+        encoding_array_.append(feature)
+    encoding_array_ = np.array(encoding_array_)
+    # 保存为本地的 npy 文件
+    np.save(os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser目标域{Data.client[-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array_)
 
-        print(f"目标域: {labels_list[:3]}")
+    print(f"目标域: {Data.client[-1]}")
 
-        for method in ['PCA', 'TSNE']:
-            #选择降维方法
-            if method == 'PCA': 
-                X_2d = PCA(n_components=2).fit_transform(encoding_array)
-            if method == 'TSNE': 
-                X_2d = TSNE(n_components=2, random_state=0, n_iter=20000).fit_transform(encoding_array)
+    for method in ['PCA', 'TSNE']:
+        #选择降维方法
+        if method == 'PCA': 
+            X_2d = PCA(n_components=2).fit_transform(encoding_array_)
+        if method == 'TSNE': 
+            X_2d = TSNE(n_components=2, random_state=0, n_iter=20000).fit_transform(encoding_array_)
 
-            # class_to_idx = test_dataset.class_to_idx
+        # class_to_idx = test_dataset.class_to_idx
 
-            plt.figure(figsize=(14, 14))
-            for idx, fruit in enumerate(class_list): # 遍历每个类别
-                #print(fruit)
-                # 获取颜色和点型
-                color = palette[idx]
-                marker = marker_list[idx%len(marker_list)]
-                # 找到所有标注类别为当前类别的图像索引号
-                indices = np.where(np.array(labels_list, dtype=object)==class_to_idx[fruit])
-                plt.scatter(X_2d[indices, 0], X_2d[indices, 1], color=color, marker=marker, label=fruit, s=150)
-            plt.legend(fontsize=16, markerscale=1, bbox_to_anchor=(1, 1))
-            plt.xticks([])
-            plt.yticks([])
+        plt.figure(figsize=(14, 14))
+        for idx, fruit in enumerate(class_list): # 遍历每个类别
+            #print(fruit)
+            # 获取颜色和点型
+            color = palette[idx]
+            marker = marker_list[idx%len(marker_list)]
+            # 找到所有标注类别为当前类别的图像索引号
+            indices = np.where(np.array(labels_list, dtype=object)==class_to_idx[fruit])
+            plt.scatter(X_2d[indices, 0], X_2d[indices, 1], color=color, marker=marker, label=fruit, s=150)
+        plt.legend(fontsize=16, markerscale=1, bbox_to_anchor=(1, 1))
+        plt.xticks([])
+        plt.yticks([])
 
-            dim_reduc_save_path = os.path.join(node.args.save_path+'/save/', f'clser_{node.args.dataset}_目标域{Data.client[-1]}语义特征{method}二维降维可视化.pdf')
+        dim_reduc_save_path = os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser_{node.args.dataset}_目标域{Data.client[-1]}语义特征{method}二维降维可视化.pdf')
 
-            plt.savefig(dim_reduc_save_path, dpi=300, bbox_inches='tight') # 保存图像
+        plt.savefig(dim_reduc_save_path, dpi=300, bbox_inches='tight') # 保存图像
 
 # def Catfish(Node_List, args):
 #     if args.catfish is None:
@@ -311,7 +311,7 @@ def compute_distances(features, prototypes):
     distances = torch.norm(torch.stack([f - prototypes for f in features]), dim=2)
     return torch.argmin(distances, dim=1)
 
-def to_img(x):
+def to_img(x, dataset):
     # from torchvision import transforms
     # x = transforms.ToTensor()(x)
     # x = transforms.ToPILImage()(x)
@@ -320,7 +320,10 @@ def to_img(x):
     # # out = 0.5 * (x + 0.5)
     # out = x.add_(mean).mul_(std)
     out = x.clamp(0, 1)  # Clamp函数可以将随机变化的数值限制在一个给定的区间[min, max]内：
-    out = out.view(-1, 3, 225, 225)  # view()函数作用是将一个多行的Tensor,拼接成一行
+    if dataset == 'rotatedmnist':
+        out = out.view(-1, 1, 28, 28)
+    else:
+        out = out.view(-1, 3, 225, 225)  # view()函数作用是将一个多行的Tensor,拼接成一行
     return out
 
 def LR_scheduler(rounds, Node_List, args, Global_node = None, logger=None):
@@ -417,7 +420,7 @@ def exp_details(args, logger):
     # table.align["key"] = "l"
     # table.align["value"] = "r"
     # print('Experimental details (all hyper-parameters):')
-    logger.info('Experimental details (all hyper-parameters):')
+    logger.info('Experimental details (all hyper-parameters):\n')
     # print('-' * 70)
     # print('|%25s | %40s  |' % ('keys', 'values'))
     # print('-' * 70)

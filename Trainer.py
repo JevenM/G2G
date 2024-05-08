@@ -218,7 +218,7 @@ def train_adv(node, args, logger, round):
     with tqdm(train_loader) as epochs:
         d_loss,g_loss,ls = 0,0,0
         data_iter = iter(node.target_loader)
-        for iter, (real_images, labels) in enumerate(epochs):
+        for iter_, (real_images, labels) in enumerate(epochs):
             batchsize = real_images.size(0)
             real_images = real_images.to(node.device)
             z = torch.randn(batchsize, latent_space).to(node.device)
@@ -246,7 +246,7 @@ def train_adv(node, args, logger, round):
                 except StopIteration:
                     break
                 true_labels_t = torch.ones(bs_t, 1).to(node.device)
-                tar_outputs = node.disc_model(target_image.view(bs_t, -1), torch.zeros(bs_t, num_classes).to(device))
+                tar_outputs = node.disc_model(target_image.view(bs_t, -1), torch.zeros(bs_t, args.classes).to(node.device))
                 loss_real_t = criterion_BCE(tar_outputs, true_labels_t)
 
                 # print(fake_images[0])
@@ -285,8 +285,14 @@ def train_adv(node, args, logger, round):
                 # print(real_images.size())
                 # print(fake_images.size())
                 # 计算原图和生成图像的表征
-                _, embeddings_orig = node.cl_model(real_images.view(batchsize, 3, 225, 225))
-                _, embeddings_gen = node.cl_model(fake_images.view(batchsize, 3, 225, 225))
+                if args.dataset == 'rotatedmnist':
+                    w_h = 28
+                    in_c = 1
+                else:
+                    w_h = 255
+                    in_c = 3
+                _, embeddings_orig = node.cl_model(real_images.view(batchsize, in_c, w_h, w_h))
+                _, embeddings_gen = node.cl_model(fake_images.view(batchsize, in_c, w_h, w_h))
 
                 # 计算对比学习的损失
                 # targets = torch.ones(embeddings_orig.size(0))
@@ -320,15 +326,15 @@ def train_adv(node, args, logger, round):
             #       'D real: {:.6f}, D fake: {:.6f}'.format(epoch, num_epoch, loss_disc.data.item(), loss_gen.data.item(), loss.data.item(),
             #                                              real_scores.data.mean(), fake_scores.data.mean()  # 打印的是真实图片的损失均值
             #     ))
-            if round == 0 and iter==len(train_loader)-1:
-                real_images = to_img(real_images.cuda().data)
+            if round == 0 and iter_==len(train_loader)-1:
+                real_images = to_img(real_images.cuda().data, args.dataset)
                 # save_image(real_images, os.path.join(images_path, '_real_images.png'))
                 save_img(real_images, os.path.join(args.save_path+"/gen_images/", '_real_images.png'), batchsize)
-            if iter==len(train_loader)-1:
-                fake_images = to_img(fake_images.cuda().data)
+            if iter_==len(train_loader)-1:
+                fake_images = to_img(fake_images.cuda().data, args.dataset)
                 # save_image(fake_images, os.path.join(images_path, '_fake_images-{}.png'.format(round + 1)))
-                save_img(fake_images, os.path.join(args.save_path+"/gen_images/", '_fake_images-{}.png'.format(round + 1)), batchsize)
-        logger.info('Epoch[{}/{}], d_loss:{:.6f}, g_loss:{:.6f}, loss:{:.6f}, D real: {:.6f}, D fake: {:.6f}'.format(round, args.E,
+                save_img(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)), batchsize)
+        logger.info('C{}-Round[{}/{}], d_loss:{:.6f}, g_loss:{:.6f}, loss:{:.6f}, D real: {:.6f}, D fake: {:.6f}'.format(node.num, round, args.R, 
         d_loss/len(train_loader), g_loss/len(train_loader), ls/len(train_loader), real_scores.data.mean(), fake_scores.data.mean()  # 打印的是真实图片的损失均值
         ))
 

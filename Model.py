@@ -342,43 +342,42 @@ class Generator(nn.Module):
 class SimCLR(nn.Module):
     def __init__(self, args, in_channel, embedding_d):
         super(SimCLR, self).__init__()
-        '''
-        self.encoder = nn.Sequential(
-            nn.Conv2d(in_channels=in_channel, out_channels=64, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)
-        )
-        '''
-        self.encoder = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec)
-        state_dict = torch.load("models/alexnet_caffe.pth.tar")
-        del state_dict["classifier.6.weight"]
-        del state_dict["classifier.6.bias"]
-        self.encoder.load_state_dict(state_dict)
+        if args.dataset == 'rotatedmnist':
+            self.encoder = nn.Sequential(
+                nn.Conv2d(in_channels=in_channel, out_channels=64, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(64),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=2, stride=2),
+                nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(128),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=2, stride=2),
+                nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=2, padding=1),
+                nn.BatchNorm2d(256),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=2, stride=2)
+            )
+            self.projection_head = nn.Sequential(
+                nn.Linear(1024, 2048),
+                nn.ReLU(),
+                nn.Linear(2048, embedding_d)
+            )
+        else:
+            self.encoder = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec)
+            state_dict = torch.load("models/alexnet_caffe.pth.tar")
+            del state_dict["classifier.6.weight"]
+            del state_dict["classifier.6.bias"]
+            self.encoder.load_state_dict(state_dict)
 
-        # self.projection_head = nn.Sequential(
-        #     nn.Linear(2304, 2048),
-        #     nn.ReLU(),
-        #     nn.Linear(2048, embedding_d)
-        # )
+            self.projection_head = nn.Sequential(OrderedDict([
+                ("1", nn.Linear(4096, 4096)),
+                ("relu6", nn.ReLU(inplace=True)),
+                ("drop6", nn.Dropout()),
 
-        self.projection_head = nn.Sequential(OrderedDict([
-            ("1", nn.Linear(4096, 4096)),
-            ("relu6", nn.ReLU(inplace=True)),
-            ("drop6", nn.Dropout()),
-
-            ("4", nn.Linear(4096, embedding_d)),
-            ("relu7", nn.ReLU(inplace=True)),
-            ("drop7", nn.Dropout())
-        ]))
+                ("4", nn.Linear(4096, embedding_d)),
+                ("relu7", nn.ReLU(inplace=True)),
+                ("drop7", nn.Dropout())
+            ]))
 
         self.initial_params()
 
@@ -389,7 +388,7 @@ class SimCLR(nn.Module):
                 layer.bias.data.zero_()
 
     def forward(self, x):
-        x = self.encoder(x*57.6)
+        x = self.encoder(x)
         x = x.view((x.size(0), -1))
         embeddings = self.projection_head(x)
         return x, embeddings
@@ -418,8 +417,10 @@ class Classifier(torch.nn.Module):
         # encoder
         self.encoder = simclr_model.encoder
         # classifier
-        # self.fc = nn.Linear(3 * 3 * 256, num_class, bias=True)
-        self.fc = task_classifier(args.hidden_size, optim.SGD, args.lr0, args.momentum, args.weight_dec,
+        if args.dataset == 'rotatedmnist':
+            self.fc = nn.Linear(2 * 2 * 256, num_class, bias=True)
+        else:
+            self.fc = task_classifier(args.hidden_size, optim.SGD, args.lr0, args.momentum, args.weight_dec,
                                                 class_num=args.classes)
 
         for param in self.encoder.parameters():

@@ -5,3 +5,4 @@ models/
 save/
 *.png
 *.txt
+*.log
