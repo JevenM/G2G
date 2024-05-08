@@ -217,6 +217,7 @@ def dimension_reduction(node, Data, round):
     # 保存为本地的 npy 文件
     np.save(os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser源域{Data.client[node.num-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array)
 
+    print(f"源域{Data.client[node.num-1]}, encoding_array.len = {len(encoding_array)}")
 
     marker_list = ['.', ',', 'o', 'v', '^', '<', '>', '1', '2', '3', '4', '8', 's', 'p', 'P', '*', 'h', 'H', '+', 'x', 'X', 'D', 'd', '|', '_', 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     class_list = Data.classes
@@ -230,7 +231,8 @@ def dimension_reduction(node, Data, round):
     random.shuffle(palette)
 
 
-    for method in ['PCA', 'TSNE']:
+    # for method in ['PCA', 'TSNE']:
+    for method in ['TSNE']:
         #选择降维方法
         if method == 'PCA': 
             X_2d = PCA(n_components=2).fit_transform(encoding_array)
@@ -257,23 +259,23 @@ def dimension_reduction(node, Data, round):
     #1 目标域
     data_loader_t = torch.utils.data.DataLoader(node.target_loader.dataset, batch_size=1, shuffle=False)
     encoding_array_ = []
-    labels_list = []
+    labels_list_ = []
     for batch_idx, (images, labels) in enumerate(data_loader_t):
         images, labels = images.to(node.device), labels.to(node.device)
         # print(labels)
         # one_hot_labels = torch.nn.functional.one_hot(labels, num_classes=num_classes)
         # labels = labels.unsqueeze(1)
         # print(labels)
-        labels_list.append(labels.item())
+        labels_list_.append(labels.item())
         feature = model_trunc(images)['semantic_feature'].squeeze().flatten().detach().cpu().numpy() # 执行前向预测，得到 avgpool 层输出的语义特征
         encoding_array_.append(feature)
     encoding_array_ = np.array(encoding_array_)
     # 保存为本地的 npy 文件
     np.save(os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser目标域{Data.client[-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array_)
 
-    print(f"目标域: {Data.client[-1]}")
+    print(f"目标域: {Data.client[-1]}, encoding_array_.len = {len(encoding_array_)}")
 
-    for method in ['PCA', 'TSNE']:
+    for method in ['TSNE']:
         #选择降维方法
         if method == 'PCA': 
             X_2d = PCA(n_components=2).fit_transform(encoding_array_)
@@ -289,7 +291,7 @@ def dimension_reduction(node, Data, round):
             color = palette[idx]
             marker = marker_list[idx%len(marker_list)]
             # 找到所有标注类别为当前类别的图像索引号
-            indices = np.where(np.array(labels_list, dtype=object)==class_to_idx[fruit])
+            indices = np.where(np.array(labels_list_, dtype=object)==class_to_idx[fruit])
             plt.scatter(X_2d[indices, 0], X_2d[indices, 1], color=color, marker=marker, label=fruit, s=150)
         plt.legend(fontsize=16, markerscale=1, bbox_to_anchor=(1, 1))
         plt.xticks([])
