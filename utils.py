@@ -86,12 +86,13 @@ class Recorder(object):
             self.val_acc[str(i)] = []
             self.val_loss[str(i)] = []
             self.val_acc[str(i)] = []
+            self.target_acc[str(i)] = []
         self.acc_best = torch.zeros(self.args.node_num + 1)
         self.get_a_better = torch.zeros(self.args.node_num + 1)
 
     def validate(self, node):
         self.counter += 1
-        node.model.to(node.device).eval()
+        node.clser.to(node.device).eval()
         total_loss = 0.0
         correct = 0.0
         true_labels = []
@@ -101,10 +102,13 @@ class Recorder(object):
         with torch.no_grad():
             for idx, (data, target) in enumerate(node.test_data):
                 data, target = data.to(node.device), target.to(node.device)
-                output = node.model(data)
+                output = node.clser(data)
                 if isinstance(output, tuple):
                     features, outputs = output
-                    pred = compute_distances(features, node.prototypes)
+                    if node.prototypes_global is None:
+                        pred = compute_distances(features, node.prototypes)
+                    else:
+                        pred = compute_distances(features, node.prototypes_global)
                     # similarity_scores = torch.matmul(features, prototypes.t())  # 计算相似度(效果不如L2)
                     # _, pred = torch.max(similarity_scores, dim=1)  # 选择最相似的类别作为预测标签
                     _, outd = torch.max(outputs, dim=1)
@@ -131,14 +135,15 @@ class Recorder(object):
         if self.val_acc[str(node.num)][-1] > self.acc_best[node.num]:
             self.get_a_better[node.num] = 1
             self.acc_best[node.num] = self.val_acc[str(node.num)][-1]
-            torch.save(node.model.state_dict(),
+            torch.save(node.clser.state_dict(),
                        node.args.save_path+'/save/model/Node{:d}_{:s}_{:d}_{:s}.pt'.format(node.num, node.args.local_model, node.args.iteration, node.args.algorithm))
             # add warm_up lr 
             if self.args.warm_up == True and str(node.num) != '0':
                 node.sche_local.step(metrics=self.val_acc[str(node.num)][-1])
                 node.sche_meme.step(metrics=self.val_acc[str(node.num)][-1])
+            self.logger.info('##### client{:d}: Better Accuracy: {:.2f}%'.format(node.num, self.val_acc[str(node.num)][-1]))
 
-        if self.val_acc[str(node.num)][-1] <= self.acc_best[node.num]:
+        elif self.val_acc[str(node.num)][-1] <= self.acc_best[node.num]:
             self.logger.info('##### client{:d}: Not better Accuracy: {:.2f}%'.format(node.num, self.val_acc[str(node.num)][-1]))
 
 
@@ -156,7 +161,7 @@ class Recorder(object):
         #     total_loss = total_loss / (idx + 1)
         #     acc = correct / len(node.test_data.dataset) * 100
     def test_on_target(self, node):
-        node.model.to(node.device).eval()
+        node.clser.to(node.device).eval()
         true_labels = []
         pred_labels = []
         out_labels = []
@@ -164,9 +169,12 @@ class Recorder(object):
         with torch.no_grad():
             for idx, (data, target) in enumerate(node.target_loader):
                 data, target = data.to(node.device), target.to(node.device)
-                output = node.model(data)
+                output = node.clser(data)
                 features, outputs = output
-                pred = compute_distances(features, node.prototypes)
+                if node.prototypes_global is None:
+                    pred = compute_distances(features, node.prototypes)
+                else:
+                    pred = compute_distances(features, node.prototypes_global)
                 # similarity_scores = torch.matmul(features, prototypes.t())  # 计算相似度(效果不如L2)
                 # _, pred = torch.max(similarity_scores, dim=1)  # 选择最相似的类别作为预测标签
                 _, outd = torch.max(outputs, dim=1)
@@ -174,14 +182,13 @@ class Recorder(object):
                 pred_labels.extend(pred.cpu().numpy())
                 out_labels.extend(outd.cpu().numpy())
 
-
             accuracy1 = accuracy_score(true_labels, pred_labels)
             print(f'c{node.num} on Target: pseudo Accuracy: {accuracy1}')
             accuracy2 = accuracy_score(true_labels, out_labels)
             print(f'c{node.num} on Target: test Accuracy: {accuracy2}')
             acc = max(accuracy1, accuracy2) * 100
             self.logger.info(f"The best Acc of c{node.num} on Target domain is {acc}%")
-            self.target_acc[str(node.num)] = acc
+            self.target_acc[str(node.num)].append(acc)
             
 
     def log(self, node):
@@ -202,9 +209,9 @@ class Recorder(object):
                    self.args.save_path+'/save/record/loss_acc_{:s}_{:s}_{:d}_{:s}.pt'.format(self.args.algorithm, self.args.notes, self.args.iteration, self.args.algorithm))
         self.logger.info('Finished!')
         for i in range(self.args.node_num + 1):
-            self.logger.info('client{}: Best Accuracy = {:.2f}%'.format(i, self.acc_best[i]))
+            self.logger.info(f'client{i}: Best acc on S = {self.acc_best[i]}, list: {self.val_acc[str(i)]}')
         for key, value in self.target_acc.items():
-            self.logger.info(f"client = {key}, acc on T = {value}")
+            self.logger.info(f"client{key}, Best acc on T = {max(value)}, list: {value}")
 
 def dimension_reduction(node, Data, round):
     model_trunc = create_feature_extractor(node.clser, return_nodes={'encoder': 'semantic_feature'})

@@ -234,7 +234,7 @@ def train_adv(node, args, logger, round):
                 # real_outputs = discriminator(real_images.view(batchsize, -1))
                 real_outputs = node.disc_model(real_images.view(batchsize, -1), y)
                 loss_real = criterion_BCE(real_outputs, real_labels)
-                real_scores = real_outputs  # 得到真实图片的判别值，输出的值越接近1越好
+                real_scores = nn.Sigmoid()(real_outputs)  # 得到真实图片的判别值，输出的值越接近1越好
                 # TODO Generator里面只用self.gen(x)的时候
                 # fake_images = gen(z).to(device)
                 fake_images = node.gen_model(z, y)
@@ -254,9 +254,9 @@ def train_adv(node, args, logger, round):
                 # fake_outputs = discriminator(fake_images.to(device))
                 # print(fake_outputs)
                 loss_fake = criterion_BCE(fake_outputs, fake_labels)
-                fake_scores = fake_outputs  # 得到假图片的判别值，对于判别器来说，假图片的损失越接近0越好
+                fake_scores = nn.Sigmoid()(fake_outputs)  # 得到假图片的判别值，对于判别器来说，假图片的损失越接近0越好
 
-                loss_disc = (loss_real + loss_fake + loss_real_t) / 3
+                loss_disc = 0.25*loss_real + 0.25*loss_fake + 0.5*loss_real_t
                 loss_disc.backward()
                 node.optm_disc.step()
                 # print(f'Epoch [{epoch+1}/10] [{k+1/str(discr_e)}], Loss Disc: {loss_disc.item()}')
@@ -348,7 +348,12 @@ def train_adv(node, args, logger, round):
     torch.save(node.gen_model.state_dict(), gen_save_path)
 
     # 训练完encoder之后
-    
+    class_counts = torch.zeros(args.classes)
+    if args.dataset == 'rotatedmnist':
+        dim = 1024
+    else:
+        dim = 4096
+    prototypes = torch.zeros(args.classes, dim).to(args.device)
     # 遍历整个数据集
     for images, labels in train_loader:
         images = images.to(node.device)
@@ -357,23 +362,23 @@ def train_adv(node, args, logger, round):
         for i in range(args.classes):  # 遍历每个类别
             class_indices = (labels == i)  # 找到属于当前类别的样本的索引
             class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
-            node.prototypes[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
-            node.class_counts[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
+            prototypes[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
+            class_counts[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
 
     # 计算每个类别的平均特征向量
     for i in range(args.classes):
-        if node.class_counts[i] > 0:
-            node.prototypes[i] /= node.class_counts[i]
+        if class_counts[i] > 0:
+            prototypes[i] /= class_counts[i]
 
-    logger.info(f"Prototypes computed successfully! {node.prototypes}")
-    node.prototypes = node.prototypes.detach()
-    node.prototypes_global = node.prototypes_global.detach()
+    # logger.info(f"Prototypes computed successfully! {node.prototypes}")
+    node.prototypes = prototypes
     # 训练分类器
     node.clser.train()
     for epo in range(args.cls_epochs):
         running_loss_t, running_loss_f = 0.0, 0.0
         loss_ce = 0
         for images, labels in train_loader:
+            node.optm_cls.zero_grad()
             images = images.to(node.device)
             z_ = torch.randn(images.size(0), latent_space).to(node.device)
             y_ = torch.eye(node.args.classes)[labels].to(node.device)  # 将类别转换为one-hot编码
@@ -384,8 +389,10 @@ def train_adv(node, args, logger, round):
             # TODO 这里是条件GAN，生成的样本已经提前设定有标签，那么下面损失函数CE_criterion直接用y_就行了
             # 是否可以把clser中的encoder解除冻结，从而在这里利用标签进行fine-tune，使得其能更准确的预测目标域的类别
             if node.prototypes_global is None:
+                node.prototypes = node.prototypes.detach()
                 pseudo_labels_f = compute_distances(features_f, node.prototypes)
             else:
+                node.prototypes_global = node.prototypes_global.detach()
                 pseudo_labels_f = compute_distances(features_f, node.prototypes_global)
             # similarity_scores_f = torch.matmul(features_f, prototypes.t())  # 计算相似度(效果很差)
             # _, pseudo_labels_f = torch.max(similarity_scores_f, dim=1)  # 选择最相似的类别作为伪标签
@@ -403,7 +410,7 @@ def train_adv(node, args, logger, round):
             running_loss_t += loss_ce_true.item()
         
         logger.info('Epoch [%d/%d], node %d: Loss_t: %.4f, Loss_f: %.4f' % (epo+1, args.cls_epochs, node.num, running_loss_t / len(train_loader), running_loss_f / len(train_loader)))
-    node.model = node.clser
+    # node.model = node.clser
     cls_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_clser.pth')
 
     torch.save(node.clser.state_dict(), cls_save_path)

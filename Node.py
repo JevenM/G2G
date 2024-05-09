@@ -45,14 +45,14 @@ class Node(object):
         self.args = args
         self.num = num + 1
         # 初始化原型矩阵
-        if args.dataset == 'rotatedmnist':
-            dim = 1024
-        else:
-            dim = 4096
-        self.prototypes = torch.zeros(self.args.classes, dim).to(args.device)
+        # if args.dataset == 'rotatedmnist':
+        #     dim = 1024
+        # else:
+        #     dim = 4096
+        self.prototypes = None
         self.prototypes_global = None
         # 统计每个类别的样本数量
-        self.class_counts = torch.zeros(self.args.classes)
+        # self.class_counts = torch.zeros(self.args.classes)
         self.device = self.args.device
         self.train_data = train_data
         self.test_data = test_data
@@ -72,7 +72,7 @@ class Node(object):
         self.disc_model = Model.Discriminator(flatten_dim, args.classes).to(self.device)
         self.optm_disc = optim.Adam(self.disc_model.parameters(), lr=0.0002, weight_decay=5e-4)
         self.clser = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
-        self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=0.001, weight_decay=5e-4)
+        self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=0.0001, weight_decay=5e-4)
 
         self.meme = init_model(self.args.global_model,args).to(self.device)
         self.meme_optimizer = init_optimizer(self.meme, self.args)
