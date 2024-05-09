@@ -77,7 +77,8 @@ for rounds in range(args.R):
             dimension_reduction(Node_List[k], Data, rounds)
     if args.algorithm == 'fed_adv':
         proto = Global_node.aggregate(Node_List)
-        Node_List[k].fork_proto(proto)
+        for k_ in range(len(Node_List)):
+            Node_List[k_].fork_proto(proto)
         logger.info(f"iter: {args.iteration}, epoch: {rounds}")
     else:
         logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))

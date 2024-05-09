@@ -128,7 +128,7 @@ class Global_Node(object):
 
     def aggregate(self, Node_List):
         Pro_List = [Node_List[i].prototypes for i in range(len(Node_List))]
-        stacked_tensor = torch.stack(Pro_List, dim=0)
+        stacked_tensor = torch.stack(Pro_List)
 
         # 沿着指定的维度求平均值
         average_tensor = torch.mean(stacked_tensor, dim=0)

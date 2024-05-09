@@ -348,29 +348,26 @@ def train_adv(node, args, logger, round):
     torch.save(node.gen_model.state_dict(), gen_save_path)
 
     # 训练完encoder之后
-    if node.prototypes_global is None:
-        # 遍历整个数据集
-        for images, labels in train_loader:
-            images = images.to(node.device)
-            feature, _ = node.cl_model(images)
-            # feature = feature.cpu().detach()
-            for i in range(args.classes):  # 遍历每个类别
-                class_indices = (labels == i)  # 找到属于当前类别的样本的索引
-                class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
-                node.prototypes[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
-                node.class_counts[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
+    
+    # 遍历整个数据集
+    for images, labels in train_loader:
+        images = images.to(node.device)
+        feature, _ = node.cl_model(images)
+        # feature = feature.cpu().detach()
+        for i in range(args.classes):  # 遍历每个类别
+            class_indices = (labels == i)  # 找到属于当前类别的样本的索引
+            class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
+            node.prototypes[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
+            node.class_counts[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
 
-        # 计算每个类别的平均特征向量
-        for i in range(args.classes):
-            if node.class_counts[i] > 0:
-                node.prototypes[i] /= node.class_counts[i]
+    # 计算每个类别的平均特征向量
+    for i in range(args.classes):
+        if node.class_counts[i] > 0:
+            node.prototypes[i] /= node.class_counts[i]
 
-        logger.info(f"Prototypes computed successfully! {node.prototypes}")
-    else:
-        node.prototypes = node.prototypes_global
-    # node.prototypes = node.prototypes.to(node.device)
-    # node.prototypes.requires_grad_(False)
+    logger.info(f"Prototypes computed successfully! {node.prototypes}")
     node.prototypes = node.prototypes.detach()
+    node.prototypes_global = node.prototypes_global.detach()
     # 训练分类器
     node.clser.train()
     for epo in range(args.cls_epochs):
@@ -386,11 +383,14 @@ def train_adv(node, args, logger, round):
             features_f, outputs_f = node.clser(fake_imgs.view(images.size(0), 1, 28, 28))
             # TODO 这里是条件GAN，生成的样本已经提前设定有标签，那么下面损失函数CE_criterion直接用y_就行了
             # 是否可以把clser中的encoder解除冻结，从而在这里利用标签进行fine-tune，使得其能更准确的预测目标域的类别
-            pseudo_labels_f = compute_distances(features_f, node.prototypes)
+            if node.prototypes_global is None:
+                pseudo_labels_f = compute_distances(features_f, node.prototypes)
+            else:
+                pseudo_labels_f = compute_distances(features_f, node.prototypes_global)
             # similarity_scores_f = torch.matmul(features_f, prototypes.t())  # 计算相似度(效果很差)
             # _, pseudo_labels_f = torch.max(similarity_scores_f, dim=1)  # 选择最相似的类别作为伪标签
             # pseudo_labels_f.requires_grad_(False)
-            # pseudo_labels_f = pseudo_labels_f.detach()
+            pseudo_labels_f = pseudo_labels_f.detach()
             loss_ce_f = CE_Loss(outputs_f, pseudo_labels_f)  # 使用伪标签计算交叉熵损失
             running_loss_f += loss_ce_f.item()
             # 真样本
@@ -402,7 +402,7 @@ def train_adv(node, args, logger, round):
             node.optm_cls.step()
             running_loss_t += loss_ce_true.item()
         
-        logger.info('Epoch [%d/%d], Loss_t: %.4f, Loss_f: %.4f' % (epo+1, args.cls_epochs, running_loss_t / len(train_loader), running_loss_f / len(train_loader)))
+        logger.info('Epoch [%d/%d], node %d: Loss_t: %.4f, Loss_f: %.4f' % (epo+1, args.cls_epochs, node.num, running_loss_t / len(train_loader), running_loss_f / len(train_loader)))
     node.model = node.clser
     cls_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_clser.pth')
 

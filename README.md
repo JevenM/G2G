@@ -34,6 +34,13 @@ pymao main_warm.py --node_num 3 --device cuda:0 --dataset office-home --classes 
 
 ### My
 
+#### VLCS
 ```
 pymao main_warm.py --node_num 3  --device cuda:0 --dataset vlcs --classes 5 --lr 0.0008 --global_model Alexnet --local_model Alexnet --algorithm fed_adv --R 50 --E 7 --pretrained True --batch_size 64 --iteration 0 
+```
+
+#### RotatedMNIST
+
+```
+pymao main_warm.py --node_num 5  --device cuda:0 --dataset rotatedmnist --classes 10 --lr 0.0008 --global_model Alexnet --local_model Alexnet --algorithm fed_adv --cls_epochs 1  --R 50 --E 3 --pretrained True --batch_size 64 --iteration 0
 ```

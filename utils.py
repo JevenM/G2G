@@ -79,6 +79,7 @@ class Recorder(object):
         self.tra_acc = {}
         self.val_loss = {}
         self.val_acc = {}
+        self.target_acc = {}
         self.logger = logger
         for i in range(self.args.node_num + 1):
             self.val_loss[str(i)] = []
@@ -138,7 +139,7 @@ class Recorder(object):
                 node.sche_meme.step(metrics=self.val_acc[str(node.num)][-1])
 
         if self.val_acc[str(node.num)][-1] <= self.acc_best[node.num]:
-            self.logger.info('##### Node{:d}: Not better Accuracy: {:.2f}%'.format(node.num, self.val_acc[str(node.num)][-1]))
+            self.logger.info('##### client{:d}: Not better Accuracy: {:.2f}%'.format(node.num, self.val_acc[str(node.num)][-1]))
 
 
         # node.meme.to(node.device).eval()
@@ -180,6 +181,7 @@ class Recorder(object):
             print(f'c{node.num} on Target: test Accuracy: {accuracy2}')
             acc = max(accuracy1, accuracy2) * 100
             self.logger.info(f"The best Acc of c{node.num} on Target domain is {acc}%")
+            self.target_acc[str(node.num)] = acc
             
 
     def log(self, node):
@@ -189,7 +191,7 @@ class Recorder(object):
     def printer(self, node):
         # num==0是global model
         if self.get_a_better[node.num] == 1 and node.num == 0:
-            self.logger.info('Node{:d}: A Better Accuracy: {:.2f}%! Model Saved!'.format(node.num, self.acc_best[node.num]))
+            self.logger.info('client{:d}: A Better Accuracy: {:.2f}%! Model Saved!'.format(node.num, self.acc_best[node.num]))
             self.get_a_better[node.num] = 0
         elif self.get_a_better[node.num] == 1:
             self.get_a_better[node.num] = 0
@@ -198,9 +200,11 @@ class Recorder(object):
     def finish(self):
         torch.save([self.val_loss, self.val_acc],
                    self.args.save_path+'/save/record/loss_acc_{:s}_{:s}_{:d}_{:s}.pt'.format(self.args.algorithm, self.args.notes, self.args.iteration, self.args.algorithm))
-        self.logger.info('Finished!\n')
+        self.logger.info('Finished!')
         for i in range(self.args.node_num + 1):
-            self.logger.info('Node{}: Best Accuracy = {:.2f}%'.format(i, self.acc_best[i]))
+            self.logger.info('client{}: Best Accuracy = {:.2f}%'.format(i, self.acc_best[i]))
+        for key, value in self.target_acc.items():
+            self.logger.info(f"client = {key}, acc on T = {value}")
 
 def dimension_reduction(node, Data, round):
     model_trunc = create_feature_extractor(node.clser, return_nodes={'encoder': 'semantic_feature'})
@@ -217,7 +221,7 @@ def dimension_reduction(node, Data, round):
     # 保存为本地的 npy 文件
     np.save(os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser源域{Data.client[node.num-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array)
 
-    print(f"源域{Data.client[node.num-1]}, encoding_array.len = {len(encoding_array)}")
+    print(f"源域{Data.client[node.num-1]}, encoding_array.len = {len(encoding_array)}, labels_list_.len = {len(labels_list)}")
 
     marker_list = ['.', ',', 'o', 'v', '^', '<', '>', '1', '2', '3', '4', '8', 's', 'p', 'P', '*', 'h', 'H', '+', 'x', 'X', 'D', 'd', '|', '_', 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     class_list = Data.classes
@@ -238,6 +242,8 @@ def dimension_reduction(node, Data, round):
             X_2d = PCA(n_components=2).fit_transform(encoding_array)
         if method == 'TSNE': 
             X_2d = TSNE(n_components=2, random_state=0, n_iter=20000).fit_transform(encoding_array)
+        
+        print(f"Source len(X_2d) = {len(X_2d)}")
 
         plt.figure(figsize=(14, 14))
         for idx, fruit in enumerate(class_list): # 遍历每个类别
@@ -273,17 +279,17 @@ def dimension_reduction(node, Data, round):
     # 保存为本地的 npy 文件
     np.save(os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser目标域{Data.client[-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array_)
 
-    print(f"目标域: {Data.client[-1]}, encoding_array_.len = {len(encoding_array_)}")
+    print(f"目标域: {Data.client[-1]}, encoding_array_.len = {len(encoding_array_)}, labels_list_.len = {len(labels_list_)}")
 
     for method in ['TSNE']:
         #选择降维方法
         if method == 'PCA': 
-            X_2d = PCA(n_components=2).fit_transform(encoding_array_)
+            X_2d_ = PCA(n_components=2).fit_transform(encoding_array_)
         if method == 'TSNE': 
-            X_2d = TSNE(n_components=2, random_state=0, n_iter=20000).fit_transform(encoding_array_)
+            X_2d_ = TSNE(n_components=2, random_state=0, n_iter=20000).fit_transform(encoding_array_)
 
         # class_to_idx = test_dataset.class_to_idx
-
+        print(f"Target len(X_2d_) = {len(X_2d_)}")
         plt.figure(figsize=(14, 14))
         for idx, fruit in enumerate(class_list): # 遍历每个类别
             #print(fruit)
@@ -292,7 +298,7 @@ def dimension_reduction(node, Data, round):
             marker = marker_list[idx%len(marker_list)]
             # 找到所有标注类别为当前类别的图像索引号
             indices = np.where(np.array(labels_list_, dtype=object)==class_to_idx[fruit])
-            plt.scatter(X_2d[indices, 0], X_2d[indices, 1], color=color, marker=marker, label=fruit, s=150)
+            plt.scatter(X_2d_[indices, 0], X_2d_[indices, 1], color=color, marker=marker, label=fruit, s=150)
         plt.legend(fontsize=16, markerscale=1, bbox_to_anchor=(1, 1))
         plt.xticks([])
         plt.yticks([])
