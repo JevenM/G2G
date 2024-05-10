@@ -6,7 +6,7 @@ from torchvision.utils import save_image
 from torchvision.models.feature_extraction import create_feature_extractor
 import os
 from utils import to_img, compute_distances, save_img
-
+import torch.nn.functional as F
 
 KL_Loss = nn.KLDivLoss(reduction='batchmean')
 Softmax = nn.Softmax(dim=1)
@@ -369,6 +369,8 @@ def train_adv(node, args, logger, round):
     for i in range(args.classes):
         if class_counts[i] > 0:
             prototypes[i] /= class_counts[i]
+    # L2 归一化
+    prototypes = F.normalize(prototypes, p=2, dim=1)
 
     # logger.info(f"Prototypes computed successfully! {node.prototypes}")
     node.prototypes = prototypes

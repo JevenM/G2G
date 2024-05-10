@@ -3,7 +3,7 @@ import torch
 import Model
 from torch import optim
 from utils import GradualWarmupScheduler
-
+import torch.nn.functional as F
 
 def init_model(model_type, args):
     model = []
@@ -133,6 +133,8 @@ class Global_Node(object):
         # 沿着指定的维度求平均值
         average_tensor = torch.mean(stacked_tensor, dim=0)
         print(average_tensor.shape)
+        # L2 归一化
+        average_tensor = F.normalize(average_tensor, p=2, dim=1)
         return average_tensor
 
     def fork(self, node):

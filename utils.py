@@ -211,7 +211,8 @@ class Recorder(object):
         for i in range(self.args.node_num + 1):
             self.logger.info(f'client{i}: Best acc on S = {self.acc_best[i]}, list: {self.val_acc[str(i)]}')
         for key, value in self.target_acc.items():
-            self.logger.info(f"client{key}, Best acc on T = {max(value)}, list: {value}")
+            if value != []:
+                self.logger.info(f"client{key}, Best acc on T = {max(value)}, list: {value}")
 
 def dimension_reduction(node, Data, round):
     model_trunc = create_feature_extractor(node.clser, return_nodes={'encoder': 'semantic_feature'})

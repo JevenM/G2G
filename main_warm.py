@@ -40,7 +40,7 @@ date_t = str(datetime.now()).split('.')[0].replace(" ", "_").replace(":", "_").r
 logger = logger_config(log_path=log_name, logging_name=args.algorithm)
 args.device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
 logger.info(f'Running on {args.device}')
-
+logger.info(result_name)
 exp_details(args, logger)
 
 Data = Data(args, logger)
@@ -50,6 +50,7 @@ Data = Data(args, logger)
 Global_node = Global_Node(Data.target_loader, args)
 Node_List = [Node(k, Data.train_loader[k], Data.test_loader[k], args, Data.target_loader) for k in range(args.node_num)]
 # Catfish(Node_List, args)
+logger.info(f"Node_list.size = {len(Node_List)}")
 
 recorder = Recorder(args,logger)
 Summary(args, logger)
@@ -84,3 +85,4 @@ for rounds in range(args.R):
         logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))
 recorder.finish()
 Summary(args, logger)
+logger.info(result_name)
