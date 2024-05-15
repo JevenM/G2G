@@ -2,6 +2,7 @@ import copy
 import torch
 import Model
 from torch import optim
+from simsiam import SimSiam
 from utils import GradualWarmupScheduler
 import torch.nn.functional as F
 
@@ -65,14 +66,22 @@ class Node(object):
         else:
             flatten_dim = 225*225*3
             in_channel = 3
-        self.gen_model = Model.Generator(64, args.classes, flatten_dim).to(self.device)
-        self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=0.0002, weight_decay=5e-4)
-        self.cl_model = Model.SimCLR(args, in_channel, 128).to(self.device)
-        self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=0.0001, weight_decay=5e-4)
+        self.gen_model = Model.Generator(args.latent_space, args.classes, flatten_dim).to(self.device)
+        self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=args.gen_lr, weight_decay=5e-4)
+        if args.method == 'simclr':
+            self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
+        elif args.method == 'simsiam':
+            self.cl_model = SimSiam(in_channel).to(self.device)
+        self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=args.cl_lr, weight_decay=5e-4)
+        # 判断是否是真样本
         self.disc_model = Model.Discriminator(flatten_dim, args.classes).to(self.device)
-        self.optm_disc = optim.Adam(self.disc_model.parameters(), lr=0.0002, weight_decay=5e-4)
+        self.optm_disc = optim.Adam(self.disc_model.parameters(), lr=args.disc_lr, weight_decay=5e-4)
+        # 判断是否是目标域
+        self.disc_model2 = Model.Discriminator2(flatten_dim).to(self.device)
+        self.optm_disc2 = optim.Adam(self.disc_model2.parameters(), lr=args.disc_lr, weight_decay=5e-4)
+
         self.clser = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
-        self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=0.0001, weight_decay=5e-4)
+        self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=args.cls_lr, weight_decay=5e-4)
 
         self.meme = init_model(self.args.global_model,args).to(self.device)
         self.meme_optimizer = init_optimizer(self.meme, self.args)
@@ -94,9 +103,10 @@ class Node(object):
         self.meme = copy.deepcopy(global_node.model).to(self.device)
         self.meme_optimizer = init_optimizer(self.meme, self.args)
 
-    # def local_fork(self, global_node):
-    #     self.model = copy.deepcopy(global_node.model).to(self.device)
-    #     self.model_optimizer = init_optimizer(self.model, self.args)
+    def local_fork(self, global_model):
+        # print(f"global: {global_model.model.state_dict()}")
+        self.clser.fc.load_state_dict(global_model.model.fc.state_dict())
+
     def fork_proto(self, protos):
         self.prototypes_global = protos
 
@@ -106,7 +116,18 @@ class Global_Node(object):
         self.num = 0
         self.args = args
         self.device = self.args.device
-        self.model = init_model(self.args.global_model, args).to(self.device)
+        
+        if args.dataset == 'rotatedmnist':
+            in_channel = 1
+            if args.method == 'simclr':
+                self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
+            elif args.method == 'simsiam':
+                self.cl_model = SimSiam(in_channel).to(self.device)
+            
+            self.model = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
+        else:
+            self.model = init_model(self.args.global_model, args).to(self.device)
+        
         self.model_optimizer = init_optimizer(self.model, self.args)
         self.test_data = test_data
         self.Dict = self.model.state_dict()
@@ -124,7 +145,31 @@ class Global_Node(object):
             for i in range(len(Node_List)):
                 self.Dict[key] += Node_State_List[i][key]
             self.Dict[key] = self.Dict[key]/len(Node_List)
-        
+
+    def merge_weights(self, Node_List):
+        weights_zero(self.cl_model)
+        # FedAvg，每个node的meme和global model的结构一样
+        Node_State_List_ = [copy.deepcopy(Node_List[i].cl_model.state_dict()) for i in range(len(Node_List))]
+        dict_ = self.cl_model.state_dict()
+        for key in dict_.keys():
+            for i in range(len(Node_List)):
+                dict_[key] += Node_State_List_[i][key]
+            dict_[key] = dict_[key]/len(Node_List)
+        # print(f"simclr Dict: {dict_}")
+        self.cl_model.load_state_dict(dict_) 
+
+        # 清零
+        weights_zero(self.model)
+        # FedAvg，每个node的meme和global model的结构一样
+        Node_State_List = [copy.deepcopy(Node_List[i].clser.fc.state_dict()) for i in range(len(Node_List))]
+        dict_1 = self.model.fc.state_dict()
+        for key in dict_1.keys():
+            for i in range(len(Node_List)):
+                dict_1[key] += Node_State_List[i][key]
+            dict_1[key] = dict_1[key]/len(Node_List)
+        # print(f"self.Dict: {self.Dict}")
+        self.model.fc.load_state_dict(dict_1)
+
 
     def aggregate(self, Node_List):
         Pro_List = [Node_List[i].prototypes for i in range(len(Node_List))]

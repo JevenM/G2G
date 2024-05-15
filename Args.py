@@ -7,6 +7,8 @@ def args_parser():
     # Total
     parser.add_argument('--algorithm', type=str, default='fed_mutual',
                         help='Type of algorithms:{fed_mutual, fed_avg, normal, fed_adv}')
+    parser.add_argument('--method', type=str, default='simclr',
+                        help='{simclr, simsiam}')
     parser.add_argument('--device', type=str, default='cuda:0',
                         help='device: {cuda, cpu}')
     parser.add_argument('--node_num', type=int, default=3,
@@ -29,12 +31,28 @@ def args_parser():
     #                     help='Type of local model: {None, LeNet5, MLP, CNN2, ResNet50}')
     parser.add_argument('--discr_e', type=int, default=1,
                         help='')
+    parser.add_argument('--disc_lr', type=float, default=0.0002,
+                        help='')
+    
     parser.add_argument('--gen_e', type=int, default=3,
                         help='')
+    parser.add_argument('--gen_lr', type=float, default=0.0002,
+                        help='')
+    
     parser.add_argument('--simclr_e', type=int, default=1,
                         help='')
+    parser.add_argument('--cl_lr', type=float, default=0.0002,
+                        help='')
+    
     parser.add_argument('--cls_epochs', type=int, default=150,
                         help='')
+    parser.add_argument('--cls_lr', type=float, default=0.0001,
+                        help='')
+    parser.add_argument('--embedding_d', type=int, default=128,
+                        help='')
+    parser.add_argument('--latent_space', type=int, default=64,
+                        help='')
+    
     # Data
     parser.add_argument('--dataset', type=str, default='vlcs',
                         help='datasets: {air_ori, air, pacs, cifar100, cifar10, femnist, office-home, mnist, rotatedmnist}')

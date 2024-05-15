@@ -5,6 +5,7 @@ import torch
 from torchvision.utils import save_image
 from torchvision.models.feature_extraction import create_feature_extractor
 import os
+from simsiam import D
 from utils import to_img, compute_distances, save_img
 import torch.nn.functional as F
 
@@ -203,12 +204,37 @@ class Trainer(object):
 
 # =========================================== my ==================================================
 
-latent_space = 64
+# latent_space = 64
 # images_path = './images/'
 # temperature用beta代替
 # temperature=0.5
 # alpha用源代码中的alpha代替
 # alpha = 0.5
+
+# Simclr
+def NT_XentLoss(z1, z2, temperature=0.5):
+    z1 = F.normalize(z1, dim=1)
+    z2 = F.normalize(z2, dim=1)
+    N, Z = z1.shape 
+    device = z1.device 
+    representations = torch.cat([z1, z2], dim=0)
+    similarity_matrix = F.cosine_similarity(representations.unsqueeze(1), representations.unsqueeze(0), dim=-1)
+    l_pos = torch.diag(similarity_matrix, N)
+    r_pos = torch.diag(similarity_matrix, -N)
+    positives = torch.cat([l_pos, r_pos]).view(2 * N, 1)
+    diag = torch.eye(2*N, dtype=torch.bool, device=device)
+    diag[N:,:N] = diag[:N,N:] = diag[:N,:N]
+
+    negatives = similarity_matrix[~diag].view(2*N, -1)
+
+    logits = torch.cat([positives, negatives], dim=1)
+    logits /= temperature
+
+    labels = torch.zeros(2*N, device=device, dtype=torch.int64)
+
+    loss = F.cross_entropy(logits, labels, reduction='sum')
+    return loss / (2 * N)
+
 
 def train_adv(node, args, logger, round):
     node.gen_model.to(node.device).train()
@@ -216,12 +242,12 @@ def train_adv(node, args, logger, round):
     node.disc_model.to(node.device).train()
     train_loader = node.train_data
     with tqdm(train_loader) as epochs:
-        d_loss,g_loss,ls = 0,0,0
+        d_loss,d_loss_1,g_loss,ls = 0,0,0,0
         data_iter = iter(node.target_loader)
         for iter_, (real_images, labels) in enumerate(epochs):
             batchsize = real_images.size(0)
             real_images = real_images.to(node.device)
-            z = torch.randn(batchsize, latent_space).to(node.device)
+            
             y = torch.eye(args.classes)[labels].to(node.device)  # 将类别转换为one-hot编码
             # 真实样本的标签为1
             real_labels = torch.ones(batchsize, 1).to(node.device)
@@ -237,17 +263,8 @@ def train_adv(node, args, logger, round):
                 real_scores = nn.Sigmoid()(real_outputs)  # 得到真实图片的判别值，输出的值越接近1越好
                 # TODO Generator里面只用self.gen(x)的时候
                 # fake_images = gen(z).to(device)
+                z = torch.randn(batchsize, args.latent_space).to(node.device)
                 fake_images = node.gen_model(z, y)
-
-                try:
-                    target_image, tar_y = next(data_iter)
-                    target_image = target_image.to(node.device)
-                    bs_t = target_image.size(0)
-                except StopIteration:
-                    break
-                true_labels_t = torch.ones(bs_t, 1).to(node.device)
-                tar_outputs = node.disc_model(target_image.view(bs_t, -1), torch.zeros(bs_t, args.classes).to(node.device))
-                loss_real_t = criterion_BCE(tar_outputs, true_labels_t)
 
                 # print(fake_images[0])
                 fake_outputs = node.disc_model(fake_images.to(node.device), y)
@@ -256,24 +273,49 @@ def train_adv(node, args, logger, round):
                 loss_fake = criterion_BCE(fake_outputs, fake_labels)
                 fake_scores = nn.Sigmoid()(fake_outputs)  # 得到假图片的判别值，对于判别器来说，假图片的损失越接近0越好
 
-                loss_disc = 0.25*loss_real + 0.25*loss_fake + 0.5*loss_real_t
+                # loss_disc = 0.25*loss_real + 0.25*loss_fake + 0.5*loss_real_t
+                loss_disc = 0.5*loss_real + 0.5*loss_fake
                 loss_disc.backward()
                 node.optm_disc.step()
                 # print(f'Epoch [{epoch+1}/10] [{k+1/str(discr_e)}], Loss Disc: {loss_disc.item()}')
             d_loss += loss_disc.item()
 
+            for i in range(args.discr_e):
+                node.optm_disc2.zero_grad()
+                try:
+                    target_image, tar_y = next(data_iter)
+                    target_image = target_image.to(node.device)
+                    bs_t = target_image.size(0)
+                except StopIteration:
+                    break
+                true_labels_t = torch.ones(bs_t, 1).to(node.device)
+                fake_labels_t = torch.zeros(bs_t, 1).to(node.device)
+                tar_outputs = node.disc_model2(target_image.view(bs_t, -1))
+                loss_real_t = criterion_BCE(tar_outputs, true_labels_t)
+
+                fake_outputs_t = node.disc_model2(fake_images.to(node.device))
+                loss_fake_t = criterion_BCE(fake_outputs_t, fake_labels_t)
+                loss_disc2 = 0.5*loss_real_t + 0.5*loss_fake_t
+                loss_disc2.backward()
+                node.optm_disc2.step()
+            d_loss_1 += loss_disc2.item()    
+
             # 训练生成器
             for i in range(args.gen_e):
                 node.optm_gen.zero_grad()
+                z = torch.randn(batchsize, args.latent_space).to(node.device)
                 gen_images = node.gen_model(z, y)
                 gen_outputs = node.disc_model(gen_images, y)
                 loss_gen = criterion_BCE(gen_outputs, real_labels)
+                gen_outputs1 = node.disc_model2(gen_images)
+                loss_gen1 = criterion_BCE(gen_outputs1, real_labels)
                 # loss_gen = loss_gen + loss
                 # loss_gen = torch.log(1.0 - (discriminator(gen_images)).detach()) 
-                loss_gen.backward()
+                loss_g = 0.5*loss_gen1 + 0.5*loss_gen
+                loss_g.backward()
                 node.optm_gen.step()
             # print(f'Epoch [{epoch+1}/10] [{i+1/str(gen_e)}], Loss: {loss.item()}, Loss Gen: {loss_gen.item()}')
-            g_loss += loss_gen.item()
+            g_loss += loss_g.item()
 
 
             for k in range(args.simclr_e):
@@ -291,9 +333,14 @@ def train_adv(node, args, logger, round):
                 else:
                     w_h = 255
                     in_c = 3
-                _, embeddings_orig = node.cl_model(real_images.view(batchsize, in_c, w_h, w_h))
-                _, embeddings_gen = node.cl_model(fake_images.view(batchsize, in_c, w_h, w_h))
+                z1, embeddings_orig = node.cl_model(real_images.view(batchsize, in_c, w_h, w_h))
+                z2, embeddings_gen = node.cl_model(fake_images.view(batchsize, in_c, w_h, w_h))
+                if args.method == 'simclr':
+                    loss = NT_XentLoss(embeddings_orig, embeddings_gen)
+                elif args.method == 'simsiam':
+                    loss = D(embeddings_orig, z2) / 2 + D(embeddings_gen, z1) / 2
 
+                '''
                 # 计算对比学习的损失
                 # targets = torch.ones(embeddings_orig.size(0))
                 # loss = criterion(embeddings_orig, embeddings_gen, targets)
@@ -316,6 +363,7 @@ def train_adv(node, args, logger, round):
                 # [2*B]
                 pos_sim = torch.cat([pos_sim, pos_sim], dim=0)
                 loss = (- torch.log(pos_sim / sim_matrix.sum(dim=-1))).mean()
+                '''
                 loss.backward()
                 node.optm_cl.step()
             ls += loss.item()
@@ -328,14 +376,14 @@ def train_adv(node, args, logger, round):
             #     ))
             if round == 0 and iter_==len(train_loader)-1:
                 real_images = to_img(real_images.cuda().data, args.dataset)
-                # save_image(real_images, os.path.join(images_path, '_real_images.png'))
-                save_img(real_images, os.path.join(args.save_path+"/gen_images/", '_real_images.png'), batchsize)
+                save_image(real_images, os.path.join(args.save_path+"/gen_images/", '_real_images.png'))
+                # save_img(real_images, os.path.join(args.save_path+"/gen_images/", '_real_images.png'), batchsize)
             if iter_==len(train_loader)-1:
                 fake_images = to_img(fake_images.cuda().data, args.dataset)
-                # save_image(fake_images, os.path.join(images_path, '_fake_images-{}.png'.format(round + 1)))
-                save_img(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)), batchsize)
-        logger.info('C{}-Round[{}/{}], d_loss:{:.6f}, g_loss:{:.6f}, loss:{:.6f}, D real: {:.6f}, D fake: {:.6f}'.format(node.num, round, args.R, 
-        d_loss/len(train_loader), g_loss/len(train_loader), ls/len(train_loader), real_scores.data.mean(), fake_scores.data.mean()  # 打印的是真实图片的损失均值
+                save_image(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)))
+                # save_img(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)), batchsize)
+        logger.info('C{}-Round[{}/{}], d_loss:{:.6f}, d_loss:{:.6f}, g_loss:{:.6f}, loss:{:.6f}, D real: {:.6f}, D fake: {:.6f}'.format(node.num, round, args.R, 
+        d_loss/len(train_loader), d_loss_1/len(train_loader), g_loss/len(train_loader), ls/len(train_loader), real_scores.data.mean(), fake_scores.data.mean()  # 打印的是真实图片的损失均值
         ))
 
     # 测试生成器网络
@@ -374,15 +422,18 @@ def train_adv(node, args, logger, round):
 
     # logger.info(f"Prototypes computed successfully! {node.prototypes}")
     node.prototypes = prototypes
+
+def train_classifier(node, args, logger):
     # 训练分类器
     node.clser.train()
+    train_loader = node.train_data
     for epo in range(args.cls_epochs):
         running_loss_t, running_loss_f = 0.0, 0.0
         loss_ce = 0
         for images, labels in train_loader:
             node.optm_cls.zero_grad()
             images = images.to(node.device)
-            z_ = torch.randn(images.size(0), latent_space).to(node.device)
+            z_ = torch.randn(images.size(0), args.latent_space).to(node.device)
             y_ = torch.eye(node.args.classes)[labels].to(node.device)  # 将类别转换为one-hot编码
             # 假样本
             fake_imgs = node.gen_model(z_, y_)

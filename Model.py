@@ -340,7 +340,7 @@ class Generator(nn.Module):
 
 # 定义对比学习模型
 class SimCLR(nn.Module):
-    def __init__(self, args, in_channel, embedding_d):
+    def __init__(self, args, in_channel):
         super(SimCLR, self).__init__()
         if args.dataset == 'rotatedmnist':
             self.encoder = nn.Sequential(
@@ -360,7 +360,7 @@ class SimCLR(nn.Module):
             self.projection_head = nn.Sequential(
                 nn.Linear(1024, 2048),
                 nn.ReLU(),
-                nn.Linear(2048, embedding_d)
+                nn.Linear(2048, args.embedding_d)
             )
         else:
             self.encoder = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec)
@@ -374,7 +374,7 @@ class SimCLR(nn.Module):
                 ("relu6", nn.ReLU(inplace=True)),
                 ("drop6", nn.Dropout()),
 
-                ("4", nn.Linear(4096, embedding_d)),
+                ("4", nn.Linear(4096, args.embedding_d)),
                 ("relu7", nn.ReLU(inplace=True)),
                 ("drop7", nn.Dropout())
             ]))
@@ -393,6 +393,7 @@ class SimCLR(nn.Module):
         embeddings = self.projection_head(x)
         return x, embeddings
 
+
 class Discriminator(nn.Module):
     def __init__(self, flat_img, num_classes):
         super(Discriminator, self).__init__()
@@ -408,6 +409,23 @@ class Discriminator(nn.Module):
 
     def forward(self, x, y):
         x = torch.cat((x, y), dim=1)
+        x = self.dis(x)
+        return x
+
+class Discriminator2(nn.Module):
+    def __init__(self, flat_img):
+        super(Discriminator2, self).__init__()
+        self.dis = nn.Sequential(
+            nn.Linear(flat_img, 512),  # 输入特征数为784，输出为512
+            nn.BatchNorm1d(512),
+            nn.LeakyReLU(0.2),  # 进行非线性映射
+            nn.Linear(512, 256),  # 进行一个线性映射
+            nn.BatchNorm1d(256),
+            nn.LeakyReLU(0.2),
+            nn.Linear(256, 1)
+        )
+
+    def forward(self, x):
         x = self.dis(x)
         return x
 

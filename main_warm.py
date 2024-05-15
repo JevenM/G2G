@@ -3,7 +3,7 @@ from Node import Node, Global_Node
 from Args import args_parser
 from Data import Data
 from utils import LR_scheduler, Recorder, exp_details, Summary, dimension_reduction
-from Trainer import Trainer
+from Trainer import Trainer, train_classifier
 from log import logger_config, set_random_seed
 from datetime import datetime
 import os
@@ -63,12 +63,14 @@ for rounds in range(args.R):
     for k in range(len(Node_List)):
         if args.algorithm != 'fed_adv': 
             Node_List[k].fork(Global_node)
+
         for epoch in range(args.E):
             Train(Node_List[k],args,logger,rounds)
-        if args.algorithm == 'fed_adv':
+        if args.algorithm == 'fed_adv' and rounds >= args.R/2:
+            train_classifier(Node_List[k], args, logger)
             recorder.validate(Node_List[k])
             recorder.test_on_target(Node_List[k])
-        else:
+        elif args.algorithm != 'fed_adv':
             recorder.printer(Node_List[k])
             Global_node.fork(Node_List[k])
             recorder.printer(Global_node)
@@ -76,12 +78,15 @@ for rounds in range(args.R):
         
         if args.algorithm == 'fed_adv' and rounds == args.R-1:
             dimension_reduction(Node_List[k], Data, rounds)
-    if args.algorithm == 'fed_adv':
+    if args.algorithm == 'fed_adv' and rounds >= args.R/2:
         proto = Global_node.aggregate(Node_List)
+        Global_node.merge_weights(Node_List)
         for k_ in range(len(Node_List)):
             Node_List[k_].fork_proto(proto)
+            Node_List[k_].local_fork(Global_node)
+        recorder.server_test_on_target(Global_node)
         logger.info(f"iter: {args.iteration}, epoch: {rounds}")
-    else:
+    elif args.algorithm != 'fed_adv':
         logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))
 recorder.finish()
 Summary(args, logger)
