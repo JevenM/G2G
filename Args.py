@@ -39,7 +39,7 @@ def args_parser():
     parser.add_argument('--gen_lr', type=float, default=0.0002,
                         help='')
     
-    parser.add_argument('--simclr_e', type=int, default=1,
+    parser.add_argument('--simclr_e', type=int, default=10,
                         help='')
     parser.add_argument('--cl_lr', type=float, default=0.0002,
                         help='')
@@ -51,6 +51,8 @@ def args_parser():
     parser.add_argument('--embedding_d', type=int, default=128,
                         help='')
     parser.add_argument('--latent_space', type=int, default=64,
+                        help='')
+    parser.add_argument('--save_model', type=bool, default=False,
                         help='')
     
     # Data

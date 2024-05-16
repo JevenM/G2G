@@ -244,14 +244,24 @@ class Recorder(object):
                 self.logger.info(f"client{key}, Best acc on T = {max(value)}")
 
         for i in range(self.args.node_num + 1):
-            self.logger.info(f'client{i}: list: {self.val_acc[str(i)]}')
+            self.logger.info(f'node{i}: list: {self.val_acc[str(i)]}')
         for key, value in self.target_acc.items():
             if value != []:
                 self.logger.info(f"client{key}, list: {value}")
 
 def dimension_reduction(node, Data, round):
-    model_trunc = create_feature_extractor(node.clser, return_nodes={'encoder': 'semantic_feature'})
+    marker_list = ['.', ',', 'o', 'v', '^', '<', '>', '1', '2', '3', '4', '8', 's', 'p', 'P', '*', 'h', 'H', '+', 'x', 'X', 'D', 'd', '|', '_', 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    class_list = Data.classes
+    class_to_idx = Data.class_to_idx
+    n_class = len(class_list) # 测试集标签类别数
+    palette = sns.hls_palette(n_class) # 配色方案
+    sns.palplot(palette)
+    # 随机打乱颜色列表和点型列表
+    random.seed(1234)
+    random.shuffle(marker_list)
+    random.shuffle(palette)
     if node.num != 0:
+        model_trunc = create_feature_extractor(node.clser, return_nodes={'encoder': 'semantic_feature'})
         #1 源域
         data_loader = torch.utils.data.DataLoader(node.test_data.dataset, batch_size=1, shuffle=False)
         encoding_array = []
@@ -266,18 +276,6 @@ def dimension_reduction(node, Data, round):
         np.save(os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser源域{Data.client[node.num-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array)
 
         print(f"源域{Data.client[node.num-1]}, encoding_array.len = {len(encoding_array)}, labels_list_.len = {len(labels_list)}")
-
-        marker_list = ['.', ',', 'o', 'v', '^', '<', '>', '1', '2', '3', '4', '8', 's', 'p', 'P', '*', 'h', 'H', '+', 'x', 'X', 'D', 'd', '|', '_', 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-        class_list = Data.classes
-        class_to_idx = Data.class_to_idx
-        n_class = len(class_list) # 测试集标签类别数
-        palette = sns.hls_palette(n_class) # 配色方案
-        sns.palplot(palette)
-        # 随机打乱颜色列表和点型列表
-        random.seed(1234)
-        random.shuffle(marker_list)
-        random.shuffle(palette)
-
 
         # for method in ['PCA', 'TSNE']:
         for method in ['TSNE']:
@@ -307,8 +305,10 @@ def dimension_reduction(node, Data, round):
             plt.savefig(dim_reduc_save_path, dpi=300, bbox_inches='tight') # 保存图像
 
     if node.num == 0:
+        model_trunc = create_feature_extractor(node.model, return_nodes={'encoder': 'semantic_feature'})
         data_loader_t = torch.utils.data.DataLoader(node.test_data.dataset, batch_size=1, shuffle=False)
     else:
+        model_trunc = create_feature_extractor(node.clser, return_nodes={'encoder': 'semantic_feature'})
         #1 目标域
         data_loader_t = torch.utils.data.DataLoader(node.target_loader.dataset, batch_size=1, shuffle=False)
     encoding_array_ = []

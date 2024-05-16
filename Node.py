@@ -105,7 +105,11 @@ class Node(object):
 
     def local_fork(self, global_model):
         # print(f"global: {global_model.model.state_dict()}")
-        self.clser.fc.load_state_dict(global_model.model.fc.state_dict())
+        self.clser.load_state_dict(global_model.model.state_dict())
+
+    def local_fork_gen(self, global_model):
+        # print(f"global: {global_model.model.state_dict()}")
+        self.gen_model.load_state_dict(global_model.gen_model.state_dict())
 
     def fork_proto(self, protos):
         self.prototypes_global = protos
@@ -119,6 +123,7 @@ class Global_Node(object):
         
         if args.dataset == 'rotatedmnist':
             in_channel = 1
+            self.gen_model = Model.Generator(args.latent_space, args.classes, 28*28).to(self.device)
             if args.method == 'simclr':
                 self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
             elif args.method == 'simsiam':
@@ -147,28 +152,28 @@ class Global_Node(object):
             self.Dict[key] = self.Dict[key]/len(Node_List)
 
     def merge_weights(self, Node_List):
-        weights_zero(self.cl_model)
+        weights_zero(self.gen_model)
         # FedAvg，每个node的meme和global model的结构一样
-        Node_State_List_ = [copy.deepcopy(Node_List[i].cl_model.state_dict()) for i in range(len(Node_List))]
-        dict_ = self.cl_model.state_dict()
+        Node_State_List_ = [copy.deepcopy(Node_List[i].gen_model.state_dict()) for i in range(len(Node_List))]
+        dict_ = self.gen_model.state_dict()
         for key in dict_.keys():
             for i in range(len(Node_List)):
                 dict_[key] += Node_State_List_[i][key]
             dict_[key] = dict_[key]/len(Node_List)
         # print(f"simclr Dict: {dict_}")
-        self.cl_model.load_state_dict(dict_) 
+        self.gen_model.load_state_dict(dict_) 
 
         # 清零
         weights_zero(self.model)
         # FedAvg，每个node的meme和global model的结构一样
-        Node_State_List = [copy.deepcopy(Node_List[i].clser.fc.state_dict()) for i in range(len(Node_List))]
-        dict_1 = self.model.fc.state_dict()
+        Node_State_List = [copy.deepcopy(Node_List[i].clser.state_dict()) for i in range(len(Node_List))]
+        dict_1 = self.model.state_dict()
         for key in dict_1.keys():
             for i in range(len(Node_List)):
                 dict_1[key] += Node_State_List[i][key]
             dict_1[key] = dict_1[key]/len(Node_List)
         # print(f"self.Dict: {self.Dict}")
-        self.model.fc.load_state_dict(dict_1)
+        self.model.load_state_dict(dict_1)
 
 
     def aggregate(self, Node_List):

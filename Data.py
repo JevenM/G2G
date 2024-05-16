@@ -88,8 +88,8 @@ class MultipleEnvironmentMNIST(MultipleDomainDataset):
         if root is None:
             raise ValueError('Data directory not specified!')
 
-        original_dataset_tr = datasets.MNIST(root, train=True, download=True)
-        original_dataset_te = datasets.MNIST(root, train=False, download=True)
+        original_dataset_tr = datasets.MNIST(root, train=True, download=False)
+        original_dataset_te = datasets.MNIST(root, train=False, download=False)
 
         original_images = torch.cat((original_dataset_tr.data,
                                      original_dataset_te.data))

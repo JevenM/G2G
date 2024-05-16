@@ -3,10 +3,12 @@ from Node import Node, Global_Node
 from Args import args_parser
 from Data import Data
 from utils import LR_scheduler, Recorder, exp_details, Summary, dimension_reduction
-from Trainer import Trainer, train_classifier
+from Trainer import Trainer, train_classifier, train_ssl
 from log import logger_config, set_random_seed
 from datetime import datetime
 import os
+from torch.utils.tensorboard import SummaryWriter
+
 
 # init args
 args = args_parser()
@@ -14,6 +16,14 @@ args = args_parser()
 comments = f"{args.dataset}-r{args.R}-lr{args.lr}-le{args.E}-bs{args.batch_size}-alpha{args.alpha}-beta{args.beta}-it{args.iteration}-{args.algorithm}"
 print(comments)
 result_name = str(datetime.now()).split('.')[0].replace(" ", "_").replace(":", "_").replace("-", "_")+'_'+comments
+
+curr_dir = './runs/' + result_name
+if not os.path.exists(curr_dir):
+    os.makedirs(curr_dir)
+
+summary_writer = SummaryWriter(log_dir=curr_dir, comment=comments)
+
+
 
 # curr_working_dir = os.getcwd()
 save_dir = os.path.join('./logger/', result_name)
@@ -65,11 +75,14 @@ for rounds in range(args.R):
             Node_List[k].fork(Global_node)
 
         for epoch in range(args.E):
-            Train(Node_List[k],args,logger,rounds)
-        if args.algorithm == 'fed_adv' and rounds >= args.R/2:
-            train_classifier(Node_List[k], args, logger)
-            recorder.validate(Node_List[k])
-            recorder.test_on_target(Node_List[k])
+            Train(Node_List[k],args,logger,rounds,summary_writer)
+        if args.algorithm == 'fed_adv':
+            if rounds >= 0:#args.R/3:
+                train_ssl(Node_List[k], args, logger, rounds, summary_writer)
+            if rounds >= 0:#args.R/2:
+                train_classifier(Node_List[k], args, logger, rounds, summary_writer)
+                recorder.validate(Node_List[k])
+                recorder.test_on_target(Node_List[k])
         elif args.algorithm != 'fed_adv':
             recorder.printer(Node_List[k])
             Global_node.fork(Node_List[k])
@@ -78,16 +91,20 @@ for rounds in range(args.R):
         
         if args.algorithm == 'fed_adv' and rounds == args.R-1:
             dimension_reduction(Node_List[k], Data, rounds)
-    if args.algorithm == 'fed_adv' and rounds >= args.R/2:
+    
+    if args.algorithm == 'fed_adv' and rounds >= 0:#args.R/2:
         proto = Global_node.aggregate(Node_List)
         Global_node.merge_weights(Node_List)
         for k_ in range(len(Node_List)):
             Node_List[k_].fork_proto(proto)
             Node_List[k_].local_fork(Global_node)
+            Node_List[k_].local_fork_gen(Global_node)
         recorder.server_test_on_target(Global_node)
         logger.info(f"iter: {args.iteration}, epoch: {rounds}")
     elif args.algorithm != 'fed_adv':
         logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))
+    if args.algorithm == 'fed_adv' and rounds == args.R-1:
+            dimension_reduction(Global_node, Data, rounds)
 recorder.finish()
 Summary(args, logger)
 logger.info(result_name)

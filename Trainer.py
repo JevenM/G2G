@@ -199,8 +199,8 @@ class Trainer(object):
         elif args.algorithm == 'fed_adv':
             self.train = train_adv
 
-    def __call__(self, node,args,logger, round=0):
-        self.train(node, args, logger, round)
+    def __call__(self, node,args,logger, round=0, sw=None):
+        self.train(node, args, logger, round, sw)
 
 # =========================================== my ==================================================
 
@@ -236,164 +236,127 @@ def NT_XentLoss(z1, z2, temperature=0.5):
     return loss / (2 * N)
 
 
-def train_adv(node, args, logger, round):
+def train_adv(node, args, logger, round, sw = None):
     node.gen_model.to(node.device).train()
     node.cl_model.to(node.device).train()
     node.disc_model.to(node.device).train()
+    node.disc_model2.to(node.device).train()
     train_loader = node.train_data
-    with tqdm(train_loader) as epochs:
-        d_loss,d_loss_1,g_loss,ls = 0,0,0,0
-        data_iter = iter(node.target_loader)
-        for iter_, (real_images, labels) in enumerate(epochs):
-            batchsize = real_images.size(0)
-            real_images = real_images.to(node.device)
+
+    d_loss,d_loss_1,g_loss,ls = 0,0,0,0
+    data_iter = iter(node.target_loader)
+    for iter_, (real_images, labels) in enumerate(train_loader):
+        batchsize = real_images.size(0)
+        real_images = real_images.to(node.device)
+        
+        y = torch.eye(args.classes)[labels].to(node.device)  # 将类别转换为one-hot编码
+        # 真实样本的标签为1
+        real_labels = torch.ones(batchsize, 1).to(node.device)
+        # 生成器生成样本的标签为0
+        fake_labels = torch.zeros(batchsize, 1).to(node.device)
+        
+        for k in range(args.discr_e):
+            # 训练辨别器
+            node.optm_disc.zero_grad()
+            # real_outputs = discriminator(real_images.view(batchsize, -1))
+            real_outputs = node.disc_model(real_images.view(batchsize, -1), y)
+            loss_real = criterion_BCE(real_outputs, real_labels)
+            real_scores = nn.Sigmoid()(real_outputs)  # 得到真实图片的判别值，输出的值越接近1越好
+            # TODO Generator里面只用self.gen(x)的时候
+            # fake_images = gen(z).to(device)
+            z = torch.randn(batchsize, args.latent_space).to(node.device)
+            fake_images = node.gen_model(z, y).detach()
+
+            # print(fake_images[0])
+            fake_outputs = node.disc_model(fake_images.to(node.device), y)
+            # fake_outputs = discriminator(fake_images.to(device))
+            # print(fake_outputs)
+            loss_fake = criterion_BCE(fake_outputs, fake_labels)
+            fake_scores = nn.Sigmoid()(fake_outputs)  # 得到假图片的判别值，对于判别器来说，假图片的损失越接近0越好
+
+            # loss_disc = 0.25*loss_real + 0.25*loss_fake + 0.5*loss_real_t
+            loss_disc = 0.5*loss_real + 0.5*loss_fake
+            loss_disc.backward()
+            node.optm_disc.step()
+            # print(f'Epoch [{epoch+1}/10] [{k+1/str(discr_e)}], Loss Disc: {loss_disc.item()}')
+        d_loss += loss_disc.item()
+
+        for i in range(args.discr_e):
+            node.optm_disc2.zero_grad()
+            try:
+                target_image, tar_y = next(data_iter)
+                target_image = target_image.to(node.device)
+                bs_t = target_image.size(0)
+            except StopIteration:
+                break
+            true_labels_t = torch.ones(bs_t, 1).to(node.device)
             
-            y = torch.eye(args.classes)[labels].to(node.device)  # 将类别转换为one-hot编码
-            # 真实样本的标签为1
-            real_labels = torch.ones(batchsize, 1).to(node.device)
-            # 生成器生成样本的标签为0
-            fake_labels = torch.zeros(batchsize, 1).to(node.device)
-            
-            for k in range(args.discr_e):
-                # 训练辨别器
-                node.optm_disc.zero_grad()
-                # real_outputs = discriminator(real_images.view(batchsize, -1))
-                real_outputs = node.disc_model(real_images.view(batchsize, -1), y)
-                loss_real = criterion_BCE(real_outputs, real_labels)
-                real_scores = nn.Sigmoid()(real_outputs)  # 得到真实图片的判别值，输出的值越接近1越好
-                # TODO Generator里面只用self.gen(x)的时候
-                # fake_images = gen(z).to(device)
-                z = torch.randn(batchsize, args.latent_space).to(node.device)
-                fake_images = node.gen_model(z, y)
-
-                # print(fake_images[0])
-                fake_outputs = node.disc_model(fake_images.to(node.device), y)
-                # fake_outputs = discriminator(fake_images.to(device))
-                # print(fake_outputs)
-                loss_fake = criterion_BCE(fake_outputs, fake_labels)
-                fake_scores = nn.Sigmoid()(fake_outputs)  # 得到假图片的判别值，对于判别器来说，假图片的损失越接近0越好
-
-                # loss_disc = 0.25*loss_real + 0.25*loss_fake + 0.5*loss_real_t
-                loss_disc = 0.5*loss_real + 0.5*loss_fake
-                loss_disc.backward()
-                node.optm_disc.step()
-                # print(f'Epoch [{epoch+1}/10] [{k+1/str(discr_e)}], Loss Disc: {loss_disc.item()}')
-            d_loss += loss_disc.item()
-
-            for i in range(args.discr_e):
-                node.optm_disc2.zero_grad()
-                try:
-                    target_image, tar_y = next(data_iter)
-                    target_image = target_image.to(node.device)
-                    bs_t = target_image.size(0)
-                except StopIteration:
-                    break
-                true_labels_t = torch.ones(bs_t, 1).to(node.device)
+            tar_outputs = node.disc_model2(target_image.view(bs_t, -1))
+            loss_real_t = criterion_BCE(tar_outputs, true_labels_t)
+            z = torch.randn(bs_t, args.latent_space).to(node.device)
+            if bs_t >= batchsize:
+                fake_images = node.gen_model(z[:batchsize], y).detach()
+                fake_labels_t = torch.zeros(batchsize, 1).to(node.device)
+            elif bs_t < batchsize:
+                fake_images = node.gen_model(z, y[:bs_t]).detach()
                 fake_labels_t = torch.zeros(bs_t, 1).to(node.device)
-                tar_outputs = node.disc_model2(target_image.view(bs_t, -1))
-                loss_real_t = criterion_BCE(tar_outputs, true_labels_t)
+            # print(z.shape)
+            # print(y[:bs_t])
+            fake_outputs_t = node.disc_model2(fake_images.to(node.device))
+            loss_fake_t = criterion_BCE(fake_outputs_t, fake_labels_t)
+            loss_disc2 = 0.5*loss_real_t + 0.5*loss_fake_t
+            loss_disc2.backward()
+            node.optm_disc2.step()
+        d_loss_1 += loss_disc2.item()    
 
-                fake_outputs_t = node.disc_model2(fake_images.to(node.device))
-                loss_fake_t = criterion_BCE(fake_outputs_t, fake_labels_t)
-                loss_disc2 = 0.5*loss_real_t + 0.5*loss_fake_t
-                loss_disc2.backward()
-                node.optm_disc2.step()
-            d_loss_1 += loss_disc2.item()    
+        # 训练生成器
+        for i in range(args.gen_e):
+            node.optm_gen.zero_grad()
+            z = torch.randn(batchsize, args.latent_space).to(node.device)
+            gen_images = node.gen_model(z, y)
+            gen_outputs = node.disc_model(gen_images, y)
+            loss_gen = criterion_BCE(gen_outputs, real_labels)
+            gen_outputs1 = node.disc_model2(gen_images)
+            loss_gen1 = criterion_BCE(gen_outputs1, real_labels)
+            # loss_gen = loss_gen + loss
+            # loss_gen = torch.log(1.0 - (discriminator(gen_images)).detach()) 
+            loss_g = 0.5*loss_gen1 + 0.5*loss_gen
+            loss_g.backward()
+            node.optm_gen.step()
+        # print(f'Epoch [{epoch+1}/10] [{i+1/str(gen_e)}], Loss: {loss.item()}, Loss Gen: {loss_gen.item()}')
+        g_loss += loss_g.item()
 
-            # 训练生成器
-            for i in range(args.gen_e):
-                node.optm_gen.zero_grad()
-                z = torch.randn(batchsize, args.latent_space).to(node.device)
-                gen_images = node.gen_model(z, y)
-                gen_outputs = node.disc_model(gen_images, y)
-                loss_gen = criterion_BCE(gen_outputs, real_labels)
-                gen_outputs1 = node.disc_model2(gen_images)
-                loss_gen1 = criterion_BCE(gen_outputs1, real_labels)
-                # loss_gen = loss_gen + loss
-                # loss_gen = torch.log(1.0 - (discriminator(gen_images)).detach()) 
-                loss_g = 0.5*loss_gen1 + 0.5*loss_gen
-                loss_g.backward()
-                node.optm_gen.step()
-            # print(f'Epoch [{epoch+1}/10] [{i+1/str(gen_e)}], Loss: {loss.item()}, Loss Gen: {loss_gen.item()}')
-            g_loss += loss_g.item()
-
-
-            for k in range(args.simclr_e):
-                node.optm_cl.zero_grad()
-
-                # 训练编码器
-                fake_images = node.gen_model(z, y)
-                # fake_images = gen(z)
-                # print(real_images.size())
-                # print(fake_images.size())
-                # 计算原图和生成图像的表征
-                if args.dataset == 'rotatedmnist':
-                    w_h = 28
-                    in_c = 1
-                else:
-                    w_h = 255
-                    in_c = 3
-                z1, embeddings_orig = node.cl_model(real_images.view(batchsize, in_c, w_h, w_h))
-                z2, embeddings_gen = node.cl_model(fake_images.view(batchsize, in_c, w_h, w_h))
-                if args.method == 'simclr':
-                    loss = NT_XentLoss(embeddings_orig, embeddings_gen)
-                elif args.method == 'simsiam':
-                    loss = D(embeddings_orig, z2) / 2 + D(embeddings_gen, z1) / 2
-
-                '''
-                # 计算对比学习的损失
-                # targets = torch.ones(embeddings_orig.size(0))
-                # loss = criterion(embeddings_orig, embeddings_gen, targets)
-
-                # 分母 ：X.X.T，再去掉对角线值，分析结果一行，可以看成它与除了这行外的其他行都进行了点积运算（包括out_1和out_2）,
-                # 而每一行为一个batch的一个取值，即一个输入图像的特征表示，
-                # 因此，X.X.T，再去掉对角线值表示，每个输入图像的特征与其所有输出特征（包括out_1和out_2）的点积，用点积来衡量相似性
-                # 加上exp操作，该操作实际计算了分母
-                # [2*B, D]
-                out = torch.cat([embeddings_orig, embeddings_gen], dim=0)
-                # [2*B, 2*B]
-                sim_matrix = torch.exp(torch.mm(out, out.t().contiguous()) / args.beta)
-                mask = (torch.ones_like(sim_matrix) - torch.eye(2 * batchsize, device=sim_matrix.device)).bool()
-                # [2*B, 2*B-1]
-                sim_matrix = sim_matrix.masked_select(mask).view(2 * batchsize, -1)
-
-                # 分子： *为对应位置相乘，也是点积
-                # compute loss
-                pos_sim = torch.exp(torch.sum(embeddings_orig * embeddings_gen, dim=-1) / args.beta)
-                # [2*B]
-                pos_sim = torch.cat([pos_sim, pos_sim], dim=0)
-                loss = (- torch.log(pos_sim / sim_matrix.sum(dim=-1))).mean()
-                '''
-                loss.backward()
-                node.optm_cl.step()
-            ls += loss.item()
-
-            # print(f'Epoch [{epoch+1}/10], Loss: {loss.item()}, Loss Gen: {loss_gen.item()}, Loss Disc: {loss_disc.item()}')
-            # 打印中间的损失
-            # print('Epoch[{}/{}], d_loss:{:.6f}, g_loss:{:.6f}, loss:{:.6f}'
-            #       'D real: {:.6f}, D fake: {:.6f}'.format(epoch, num_epoch, loss_disc.data.item(), loss_gen.data.item(), loss.data.item(),
-            #                                              real_scores.data.mean(), fake_scores.data.mean()  # 打印的是真实图片的损失均值
-            #     ))
-            if round == 0 and iter_==len(train_loader)-1:
-                real_images = to_img(real_images.cuda().data, args.dataset)
-                save_image(real_images, os.path.join(args.save_path+"/gen_images/", '_real_images.png'))
-                # save_img(real_images, os.path.join(args.save_path+"/gen_images/", '_real_images.png'), batchsize)
-            if iter_==len(train_loader)-1:
-                fake_images = to_img(fake_images.cuda().data, args.dataset)
-                save_image(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)))
-                # save_img(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)), batchsize)
-        logger.info('C{}-Round[{}/{}], d_loss:{:.6f}, d_loss:{:.6f}, g_loss:{:.6f}, loss:{:.6f}, D real: {:.6f}, D fake: {:.6f}'.format(node.num, round, args.R, 
-        d_loss/len(train_loader), d_loss_1/len(train_loader), g_loss/len(train_loader), ls/len(train_loader), real_scores.data.mean(), fake_scores.data.mean()  # 打印的是真实图片的损失均值
-        ))
+        # print(f'Epoch [{epoch+1}/10], Loss: {loss.item()}, Loss Gen: {loss_gen.item()}, Loss Disc: {loss_disc.item()}')
+        # 打印中间的损失
+        # print('Epoch[{}/{}], d_loss:{:.6f}, g_loss:{:.6f}, loss:{:.6f}'
+        #       'D real: {:.6f}, D fake: {:.6f}'.format(epoch, num_epoch, loss_disc.data.item(), loss_gen.data.item(), loss.data.item(),
+        #                                              real_scores.data.mean(), fake_scores.data.mean()  # 打印的是真实图片的损失均值
+        #     ))
+        if round == 0 and iter_==len(train_loader)-1:
+            real_images = to_img(real_images.cuda().data, args.dataset)
+            save_image(real_images, os.path.join(args.save_path+"/gen_images/", '{}_real_images.png'.format(str(node.num))))
+            # save_img(real_images, os.path.join(args.save_path+"/gen_images/", '_real_images.png'), batchsize)
+        if iter_==len(train_loader)-1:
+            fake_images = to_img(fake_images.cuda().data, args.dataset)
+            save_image(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)))
+            # save_img(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)), batchsize)
+    sw.add_scalar('Train-adv/d_loss', d_loss/len(train_loader), round+1)
+    sw.add_scalar('Train-adv/d_loss1', d_loss_1/len(train_loader), round+1)
+    sw.add_scalar('Train-adv/g_loss', g_loss/len(train_loader), round+1)
+    sw.add_scalar('Train-adv/real_scores', real_scores.data.mean(), round+1)
+    sw.add_scalar('Train-adv/fake_scores', fake_scores.data.mean(), round+1)
+    logger.info('C{}-Round[{}/{}], d_loss:{:.6f}, d_loss1:{:.6f}, g_loss:{:.6f}, D real: {:.6f}, D fake: {:.6f}'.format(node.num, round, args.R, 
+    d_loss/len(train_loader), d_loss_1/len(train_loader), g_loss/len(train_loader), real_scores.data.mean(), fake_scores.data.mean()  # 打印的是真实图片的损失均值
+    ))
 
     # 测试生成器网络
     node.gen_model.eval()
+    if args.save_model:
+        simclr_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_simclr.pth')
+        gen_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_gen.pth')
 
-    simclr_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_simclr.pth')
-    gen_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_gen.pth')
-
-    torch.save(node.cl_model.state_dict(), simclr_save_path)
-    torch.save(node.gen_model.state_dict(), gen_save_path)
+        torch.save(node.cl_model.state_dict(), simclr_save_path)
+        torch.save(node.gen_model.state_dict(), gen_save_path)
 
     # 训练完encoder之后
     class_counts = torch.zeros(args.classes)
@@ -423,7 +386,69 @@ def train_adv(node, args, logger, round):
     # logger.info(f"Prototypes computed successfully! {node.prototypes}")
     node.prototypes = prototypes
 
-def train_classifier(node, args, logger):
+def train_ssl(node, args, logger, round, sw=None):
+    node.cl_model.to(node.device).train()
+    train_loader = node.train_data
+    # 训练编码器
+    for k in range(args.simclr_e):
+        ls = 0
+        for iter_, (real_images, labels) in enumerate(train_loader):
+            batchsize = real_images.size(0)
+            real_images = real_images.to(node.device)
+        
+            node.optm_cl.zero_grad()
+            z = torch.randn(batchsize, args.latent_space).to(node.device)
+            y = torch.eye(args.classes)[labels].to(node.device)  # 将类别转换为one-hot编码
+            fake_images = node.gen_model(z, y).detach()
+            # fake_images = gen(z)
+            # print(real_images.size())
+            # print(fake_images.size())
+            # 计算原图和生成图像的表征
+            if args.dataset == 'rotatedmnist':
+                w_h = 28
+                in_c = 1
+            else:
+                w_h = 255
+                in_c = 3
+            z1, embeddings_orig = node.cl_model(real_images.view(batchsize, in_c, w_h, w_h))
+            z2, embeddings_gen = node.cl_model(fake_images.view(batchsize, in_c, w_h, w_h))
+            if args.method == 'simclr':
+                loss = NT_XentLoss(embeddings_orig, embeddings_gen)
+            elif args.method == 'simsiam':
+                loss = D(embeddings_orig, z2) / 2 + D(embeddings_gen, z1) / 2
+
+            '''
+            # 计算对比学习的损失
+            # targets = torch.ones(embeddings_orig.size(0))
+            # loss = criterion(embeddings_orig, embeddings_gen, targets)
+
+            # 分母 ：X.X.T，再去掉对角线值，分析结果一行，可以看成它与除了这行外的其他行都进行了点积运算（包括out_1和out_2）,
+            # 而每一行为一个batch的一个取值，即一个输入图像的特征表示，
+            # 因此，X.X.T，再去掉对角线值表示，每个输入图像的特征与其所有输出特征（包括out_1和out_2）的点积，用点积来衡量相似性
+            # 加上exp操作，该操作实际计算了分母
+            # [2*B, D]
+            out = torch.cat([embeddings_orig, embeddings_gen], dim=0)
+            # [2*B, 2*B]
+            sim_matrix = torch.exp(torch.mm(out, out.t().contiguous()) / args.beta)
+            mask = (torch.ones_like(sim_matrix) - torch.eye(2 * batchsize, device=sim_matrix.device)).bool()
+            # [2*B, 2*B-1]
+            sim_matrix = sim_matrix.masked_select(mask).view(2 * batchsize, -1)
+
+            # 分子： *为对应位置相乘，也是点积
+            # compute loss
+            pos_sim = torch.exp(torch.sum(embeddings_orig * embeddings_gen, dim=-1) / args.beta)
+            # [2*B]
+            pos_sim = torch.cat([pos_sim, pos_sim], dim=0)
+            loss = (- torch.log(pos_sim / sim_matrix.sum(dim=-1))).mean()
+            '''
+            loss.backward()
+            node.optm_cl.step()
+        ls += loss.item()
+        logger.info(f'node {node.num} ssl loss {ls/len(train_loader)}')
+        sw.add_scalar('Train-ssl/loss', ls/len(train_loader), round*args.simclr_e+k)
+
+
+def train_classifier(node, args, logger, round, sw=None):
     # 训练分类器
     node.clser.train()
     train_loader = node.train_data
@@ -436,7 +461,7 @@ def train_classifier(node, args, logger):
             z_ = torch.randn(images.size(0), args.latent_space).to(node.device)
             y_ = torch.eye(node.args.classes)[labels].to(node.device)  # 将类别转换为one-hot编码
             # 假样本
-            fake_imgs = node.gen_model(z_, y_)
+            fake_imgs = node.gen_model(z_, y_).detach()
             # fake_imgs = gen(z_)
             features_f, outputs_f = node.clser(fake_imgs.view(images.size(0), 1, 28, 28))
             # TODO 这里是条件GAN，生成的样本已经提前设定有标签，那么下面损失函数CE_criterion直接用y_就行了
@@ -461,11 +486,13 @@ def train_classifier(node, args, logger):
             loss_ce.backward()
             node.optm_cls.step()
             running_loss_t += loss_ce_true.item()
-        
+        sw.add_scalar('Train-cls/t_loss', running_loss_t / len(train_loader), round*args.cls_epochs+epo)
+        sw.add_scalar('Train-cls/f_loss', running_loss_f / len(train_loader), round*args.cls_epochs+epo)
+        sw.add_scalar('Train-cls/ce_loss', loss_ce.item() / len(train_loader), round*args.cls_epochs+epo)
         logger.info('Epoch [%d/%d], node %d: Loss_t: %.4f, Loss_f: %.4f' % (epo+1, args.cls_epochs, node.num, running_loss_t / len(train_loader), running_loss_f / len(train_loader)))
     # node.model = node.clser
-    cls_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_clser.pth')
-
-    torch.save(node.clser.state_dict(), cls_save_path)
+    if args.save_model:
+        cls_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_clser.pth')
+        torch.save(node.clser.state_dict(), cls_save_path)
     
 
