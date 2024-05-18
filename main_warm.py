@@ -75,14 +75,14 @@ for rounds in range(args.R):
             Node_List[k].fork(Global_node)
 
         for epoch in range(args.E):
-            Train(Node_List[k],args,logger,rounds,summary_writer)
+            Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
         if args.algorithm == 'fed_adv':
             if rounds >= 0:#args.R/3:
                 train_ssl(Node_List[k], args, logger, rounds, summary_writer)
             if rounds >= 0:#args.R/2:
                 train_classifier(Node_List[k], args, logger, rounds, summary_writer)
                 recorder.validate(Node_List[k])
-                recorder.test_on_target(Node_List[k])
+                recorder.test_on_target(Node_List[k], summary_writer, rounds)
         elif args.algorithm != 'fed_adv':
             recorder.printer(Node_List[k])
             Global_node.fork(Node_List[k])
@@ -94,12 +94,17 @@ for rounds in range(args.R):
     
     if args.algorithm == 'fed_adv' and rounds >= 0:#args.R/2:
         proto = Global_node.aggregate(Node_List)
-        Global_node.merge_weights(Node_List)
+        acc_list = []
+        for node in Node_List:
+            acc_list.append(recorder.target_acc[str(node.num)][-1])
+            
+        Global_node.merge_weights(Node_List, acc_list)
+        # Global_node.train_classifier(rounds, logger, summary_writer)
         for k_ in range(len(Node_List)):
             Node_List[k_].fork_proto(proto)
             Node_List[k_].local_fork(Global_node)
             Node_List[k_].local_fork_gen(Global_node)
-        recorder.server_test_on_target(Global_node)
+        recorder.server_test_on_target(Global_node, summary_writer, rounds)
         logger.info(f"iter: {args.iteration}, epoch: {rounds}")
     elif args.algorithm != 'fed_adv':
         logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))

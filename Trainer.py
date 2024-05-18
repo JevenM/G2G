@@ -199,8 +199,8 @@ class Trainer(object):
         elif args.algorithm == 'fed_adv':
             self.train = train_adv
 
-    def __call__(self, node,args,logger, round=0, sw=None):
-        self.train(node, args, logger, round, sw)
+    def __call__(self, node,args,logger, round=0, sw=None, epo=None):
+        self.train(node, args, logger, round, sw, epo)
 
 # =========================================== my ==================================================
 
@@ -236,7 +236,7 @@ def NT_XentLoss(z1, z2, temperature=0.5):
     return loss / (2 * N)
 
 
-def train_adv(node, args, logger, round, sw = None):
+def train_adv(node, args, logger, round, sw = None, epo=None):
     node.gen_model.to(node.device).train()
     node.cl_model.to(node.device).train()
     node.disc_model.to(node.device).train()
@@ -340,17 +340,17 @@ def train_adv(node, args, logger, round, sw = None):
             fake_images = to_img(fake_images.cuda().data, args.dataset)
             save_image(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)))
             # save_img(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)), batchsize)
-    sw.add_scalar('Train-adv/d_loss', d_loss/len(train_loader), round+1)
-    sw.add_scalar('Train-adv/d_loss1', d_loss_1/len(train_loader), round+1)
-    sw.add_scalar('Train-adv/g_loss', g_loss/len(train_loader), round+1)
-    sw.add_scalar('Train-adv/real_scores', real_scores.data.mean(), round+1)
-    sw.add_scalar('Train-adv/fake_scores', fake_scores.data.mean(), round+1)
+    sw.add_scalar(f'Train-adv/d_loss/{node.num}', d_loss/len(train_loader), round*args.E+epo)
+    sw.add_scalar(f'Train-adv/d_loss1/{node.num}', d_loss_1/len(train_loader), round*args.E+epo)
+    sw.add_scalar(f'Train-adv/g_loss/{node.num}', g_loss/len(train_loader), round*args.E+epo)
+    sw.add_scalar(f'Train-adv/real_scores/{node.num}', real_scores.data.mean(), round*args.E+epo)
+    sw.add_scalar(f'Train-adv/fake_scores/{node.num}', fake_scores.data.mean(), round*args.E+epo)
     logger.info('C{}-Round[{}/{}], d_loss:{:.6f}, d_loss1:{:.6f}, g_loss:{:.6f}, D real: {:.6f}, D fake: {:.6f}'.format(node.num, round, args.R, 
     d_loss/len(train_loader), d_loss_1/len(train_loader), g_loss/len(train_loader), real_scores.data.mean(), fake_scores.data.mean()  # 打印的是真实图片的损失均值
     ))
 
     # 测试生成器网络
-    node.gen_model.eval()
+    # node.gen_model.eval()
     if args.save_model:
         simclr_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_simclr.pth')
         gen_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_gen.pth')
@@ -445,7 +445,7 @@ def train_ssl(node, args, logger, round, sw=None):
             node.optm_cl.step()
         ls += loss.item()
         logger.info(f'node {node.num} ssl loss {ls/len(train_loader)}')
-        sw.add_scalar('Train-ssl/loss', ls/len(train_loader), round*args.simclr_e+k)
+        sw.add_scalar(f'Train-ssl/loss/{node.num}', ls/len(train_loader), round*args.simclr_e+k)
 
 
 def train_classifier(node, args, logger, round, sw=None):
@@ -486,9 +486,9 @@ def train_classifier(node, args, logger, round, sw=None):
             loss_ce.backward()
             node.optm_cls.step()
             running_loss_t += loss_ce_true.item()
-        sw.add_scalar('Train-cls/t_loss', running_loss_t / len(train_loader), round*args.cls_epochs+epo)
-        sw.add_scalar('Train-cls/f_loss', running_loss_f / len(train_loader), round*args.cls_epochs+epo)
-        sw.add_scalar('Train-cls/ce_loss', loss_ce.item() / len(train_loader), round*args.cls_epochs+epo)
+        sw.add_scalar(f'Train-cls/t_loss/{node.num}', running_loss_t / len(train_loader), round*args.cls_epochs+epo)
+        sw.add_scalar(f'Train-cls/f_loss/{node.num}', running_loss_f / len(train_loader), round*args.cls_epochs+epo)
+        sw.add_scalar(f'Train-cls/ce_loss/{node.num}', loss_ce.item() / len(train_loader), round*args.cls_epochs+epo)
         logger.info('Epoch [%d/%d], node %d: Loss_t: %.4f, Loss_f: %.4f' % (epo+1, args.cls_epochs, node.num, running_loss_t / len(train_loader), running_loss_f / len(train_loader)))
     # node.model = node.clser
     if args.save_model:

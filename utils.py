@@ -160,7 +160,7 @@ class Recorder(object):
         #         correct += pred.eq(target.view_as(pred)).sum().item()
         #     total_loss = total_loss / (idx + 1)
         #     acc = correct / len(node.test_data.dataset) * 100
-    def test_on_target(self, node):
+    def test_on_target(self, node, sw, round):
         node.clser.to(node.device).eval()
         true_labels = []
         pred_labels = []
@@ -187,10 +187,12 @@ class Recorder(object):
             accuracy2 = accuracy_score(true_labels, out_labels)
             self.logger.info(f'c{node.num} on Target: test Accuracy: {accuracy2}')
             acc = max(accuracy1, accuracy2) * 100
-            self.logger.info(f"The best Acc of c{node.num} on Target domain is {acc}%")
+            self.logger.info(f"Better Acc of c{node.num} on Target domain is {acc}%")
             self.target_acc[str(node.num)].append(acc)
+            sw.add_scalar(f'Test-target/{node.num}/pseu', accuracy1, round+1)
+            sw.add_scalar(f'Test-target/{node.num}/true', accuracy2, round+1)
 
-    def server_test_on_target(self, node):
+    def server_test_on_target(self, node, sw, round):
         node.model.to(node.device).eval()
         true_labels = []
         pred_labels = []
@@ -218,7 +220,8 @@ class Recorder(object):
             self.logger.info(f's{node.num} on Target: test Accuracy: {accuracy2}')
             # acc = max(accuracy1, accuracy2) * 100
             # self.logger.info(f"The best Acc of c{node.num} on Target domain is {acc}%")
-            self.target_acc[str(node.num)].append(accuracy2*100)        
+            self.target_acc[str(node.num)].append(accuracy2*100)
+            sw.add_scalar(f'Test-target/{node.num}', accuracy2, round+1)
 
     def log(self, node):
         # print(node.num)

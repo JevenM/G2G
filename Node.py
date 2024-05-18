@@ -5,6 +5,7 @@ from torch import optim
 from simsiam import SimSiam
 from utils import GradualWarmupScheduler
 import torch.nn.functional as F
+import torch.nn as nn
 
 def init_model(model_type, args):
     model = []
@@ -130,6 +131,7 @@ class Global_Node(object):
                 self.cl_model = SimSiam(in_channel).to(self.device)
             
             self.model = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
+            self.optm_cls = optim.Adam(self.model.fc.parameters(), lr=args.cls_lr, weight_decay=5e-4)
         else:
             self.model = init_model(self.args.global_model, args).to(self.device)
         
@@ -151,7 +153,10 @@ class Global_Node(object):
                 self.Dict[key] += Node_State_List[i][key]
             self.Dict[key] = self.Dict[key]/len(Node_List)
 
-    def merge_weights(self, Node_List):
+    def merge_weights(self, Node_List, acc_list):
+        # 归一化
+        acc_list_norm = [float(acc) / sum(acc_list) for acc in acc_list]
+
         weights_zero(self.gen_model)
         # FedAvg，每个node的meme和global model的结构一样
         Node_State_List_ = [copy.deepcopy(Node_List[i].gen_model.state_dict()) for i in range(len(Node_List))]
@@ -171,6 +176,7 @@ class Global_Node(object):
         for key in dict_1.keys():
             for i in range(len(Node_List)):
                 dict_1[key] += Node_State_List[i][key]
+                # dict_1[key] += (Node_State_List[i][key].float()*acc_list_norm[i]).long()
             dict_1[key] = dict_1[key]/len(Node_List)
         # print(f"self.Dict: {self.Dict}")
         self.model.load_state_dict(dict_1)
@@ -194,3 +200,22 @@ class Global_Node(object):
     # def fork_local(self, node):
     #     self.model = copy.deepcopy(node.model).to(self.device)
     #     self.model_optimizer = init_optimizer(self.model, self.args)
+
+    def train_classifier(self, round, logger, sw):
+        self.model.train()
+        for epo in range(100):
+            loss_ce = 0,0
+            self.optm_cls.zero_grad()
+            z_ = torch.randn(64, self.args.latent_space).to(self.device)
+            labels = torch.randint(0, 10, (64,))
+            y_ = torch.eye(self.args.classes)[labels].to(self.device)  # 将类别转换为one-hot编码
+
+            # 假样本
+            fake_imgs = self.gen_model(z_, y_).detach()
+            features_f, outputs_f = self.model(fake_imgs.view(64, 1, 28, 28))
+
+            loss_ce = nn.CrossEntropyLoss()(outputs_f, y_)  # 使用logits计算交叉熵损失
+            loss_ce.backward()
+            self.optm_cls.step()
+            sw.add_scalar(f'Train-cls/t_loss/{self.num}', loss_ce.item(), round*100+epo)
+            logger.info('S Epoch [%d/%d], node %d: Loss: %.4f' % (epo+1, 100, self.num, loss_ce.item()))
