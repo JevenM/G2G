@@ -199,8 +199,8 @@ class Trainer(object):
         elif args.algorithm == 'fed_adv':
             self.train = train_adv
 
-    def __call__(self, node,args,logger, round=0, sw=None, epo=None):
-        self.train(node, args, logger, round, sw, epo)
+    def __call__(self, node, args, logger, round=0, sw=None, epo=None):
+        self.train(node, args, logger, round, sw, epo) # type: ignore
 
 # =========================================== my ==================================================
 
@@ -265,8 +265,8 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
             # TODO Generator里面只用self.gen(x)的时候
             # fake_images = gen(z).to(device)
             z = torch.randn(batchsize, args.latent_space).to(node.device)
+            # fake_images = node.gen_model(real_images.view(batchsize, -1), y).detach()
             fake_images = node.gen_model(z, y).detach()
-
             # print(fake_images[0])
             fake_outputs = node.disc_model(fake_images.to(node.device), y)
             # fake_outputs = discriminator(fake_images.to(device))
@@ -296,9 +296,11 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
             z = torch.randn(bs_t, args.latent_space).to(node.device)
             if bs_t >= batchsize:
                 fake_images = node.gen_model(z[:batchsize], y).detach()
+                # fake_images = node.gen_model(target_image.view(bs_t, -1)[:batchsize], y).detach()
                 fake_labels_t = torch.zeros(batchsize, 1).to(node.device)
             elif bs_t < batchsize:
                 fake_images = node.gen_model(z, y[:bs_t]).detach()
+                # fake_images = node.gen_model(target_image.view(bs_t, -1), y[:bs_t]).detach()
                 fake_labels_t = torch.zeros(bs_t, 1).to(node.device)
             # print(z.shape)
             # print(y[:bs_t])
@@ -314,6 +316,7 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
             node.optm_gen.zero_grad()
             z = torch.randn(batchsize, args.latent_space).to(node.device)
             gen_images = node.gen_model(z, y)
+            # gen_images = node.gen_model(real_images.view(batchsize, -1), y)
             gen_outputs = node.disc_model(gen_images, y)
             loss_gen = criterion_BCE(gen_outputs, real_labels)
             gen_outputs1 = node.disc_model2(gen_images)
@@ -340,17 +343,17 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
             fake_images = to_img(fake_images.cuda().data, args.dataset)
             save_image(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)))
             # save_img(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)), batchsize)
-    sw.add_scalar(f'Train-adv/d_loss/{node.num}', d_loss/len(train_loader), round*args.E+epo)
-    sw.add_scalar(f'Train-adv/d_loss1/{node.num}', d_loss_1/len(train_loader), round*args.E+epo)
-    sw.add_scalar(f'Train-adv/g_loss/{node.num}', g_loss/len(train_loader), round*args.E+epo)
-    sw.add_scalar(f'Train-adv/real_scores/{node.num}', real_scores.data.mean(), round*args.E+epo)
-    sw.add_scalar(f'Train-adv/fake_scores/{node.num}', fake_scores.data.mean(), round*args.E+epo)
+    sw.add_scalar(f'Train-adv/d_loss/{node.num}', d_loss/len(train_loader), round*args.E+epo) # type: ignore
+    sw.add_scalar(f'Train-adv/d_loss1/{node.num}', d_loss_1/len(train_loader), round*args.E+epo) # type: ignore
+    sw.add_scalar(f'Train-adv/g_loss/{node.num}', g_loss/len(train_loader), round*args.E+epo) # type: ignore
+    sw.add_scalar(f'Train-adv/real_scores/{node.num}', real_scores.data.mean(), round*args.E+epo) # type: ignore
+    sw.add_scalar(f'Train-adv/fake_scores/{node.num}', fake_scores.data.mean(), round*args.E+epo) # type: ignore
     logger.info('C{}-Round[{}/{}], d_loss:{:.6f}, d_loss1:{:.6f}, g_loss:{:.6f}, D real: {:.6f}, D fake: {:.6f}'.format(node.num, round, args.R, 
     d_loss/len(train_loader), d_loss_1/len(train_loader), g_loss/len(train_loader), real_scores.data.mean(), fake_scores.data.mean()  # 打印的是真实图片的损失均值
     ))
 
-    # 测试生成器网络
-    # node.gen_model.eval()
+
+    node.cl_model.eval()
     if args.save_model:
         simclr_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_simclr.pth')
         gen_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_gen.pth')
@@ -400,6 +403,7 @@ def train_ssl(node, args, logger, round, sw=None):
             z = torch.randn(batchsize, args.latent_space).to(node.device)
             y = torch.eye(args.classes)[labels].to(node.device)  # 将类别转换为one-hot编码
             fake_images = node.gen_model(z, y).detach()
+            # fake_images = node.gen_model(real_images.view(batchsize, -1), y).detach()
             # fake_images = gen(z)
             # print(real_images.size())
             # print(fake_images.size())
@@ -445,7 +449,7 @@ def train_ssl(node, args, logger, round, sw=None):
             node.optm_cl.step()
         ls += loss.item()
         logger.info(f'node {node.num} ssl loss {ls/len(train_loader)}')
-        sw.add_scalar(f'Train-ssl/loss/{node.num}', ls/len(train_loader), round*args.simclr_e+k)
+        sw.add_scalar(f'Train-ssl/loss/{node.num}', ls/len(train_loader), round*args.simclr_e+k) # type: ignore
 
 
 def train_classifier(node, args, logger, round, sw=None):
@@ -462,6 +466,8 @@ def train_classifier(node, args, logger, round, sw=None):
             y_ = torch.eye(node.args.classes)[labels].to(node.device)  # 将类别转换为one-hot编码
             # 假样本
             fake_imgs = node.gen_model(z_, y_).detach()
+            # fake_imgs = node.gen_model(images.view(images.size(0), -1), y_).detach()
+            
             # fake_imgs = gen(z_)
             features_f, outputs_f = node.clser(fake_imgs.view(images.size(0), 1, 28, 28))
             # TODO 这里是条件GAN，生成的样本已经提前设定有标签，那么下面损失函数CE_criterion直接用y_就行了
@@ -486,9 +492,9 @@ def train_classifier(node, args, logger, round, sw=None):
             loss_ce.backward()
             node.optm_cls.step()
             running_loss_t += loss_ce_true.item()
-        sw.add_scalar(f'Train-cls/t_loss/{node.num}', running_loss_t / len(train_loader), round*args.cls_epochs+epo)
-        sw.add_scalar(f'Train-cls/f_loss/{node.num}', running_loss_f / len(train_loader), round*args.cls_epochs+epo)
-        sw.add_scalar(f'Train-cls/ce_loss/{node.num}', loss_ce.item() / len(train_loader), round*args.cls_epochs+epo)
+        sw.add_scalar(f'Train-cls/t_loss/{node.num}', running_loss_t / len(train_loader), round*args.cls_epochs+epo) # type: ignore
+        sw.add_scalar(f'Train-cls/f_loss/{node.num}', running_loss_f / len(train_loader), round*args.cls_epochs+epo) # type: ignore
+        sw.add_scalar(f'Train-cls/ce_loss/{node.num}', loss_ce.item() / len(train_loader), round*args.cls_epochs+epo) # type: ignore
         logger.info('Epoch [%d/%d], node %d: Loss_t: %.4f, Loss_f: %.4f' % (epo+1, args.cls_epochs, node.num, running_loss_t / len(train_loader), running_loss_f / len(train_loader)))
     # node.model = node.clser
     if args.save_model:

@@ -7,6 +7,12 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split, TensorDataset
 from torchvision.transforms.functional import rotate
+from torch.utils.data import DataLoader, Sampler
+from torchvision import datasets, transforms
+import random
+from collections import defaultdict
+
+
 class Data(object):
     def __init__(self, args, logger):
         self.args = args
@@ -152,6 +158,66 @@ class Loader_dataset(data.Dataset):
         data, label = self.dataset.__getitem__(idx)
         return data, label
 
+
+class UniqueLabelSampler(Sampler):
+    def __init__(self, data_source, batch_size=10, num_classes=10):
+        self.data_source = data_source
+        self.num_classes = num_classes
+        self.batch_size = batch_size
+        self.labels = data_source.targets.numpy()
+        self.indices = list(range(len(self.labels)))
+        self.label_to_indices = defaultdict(list)
+        for idx, label in enumerate(self.labels):
+            self.label_to_indices[label].append(idx)
+        for label in self.label_to_indices.keys():
+            print(len(self.label_to_indices[label]))
+        
+    def __iter__(self):
+        label_to_indices = {label: indices[:] for label, indices in self.label_to_indices.items()}  # Copy the dictionary
+        batches = []
+        # print(f"len {len(self.data_source)}")
+        while len(batches) * self.batch_size < len(self.data_source):
+            batch = []
+            used_labels = set()
+            attempt_count = 0  # Track number of attempts to form a batch
+            while len(batch) < self.batch_size and attempt_count < 100:
+                if not label_to_indices:
+                    print("No more labels available to sample from.")
+                    break
+                label = random.choice(list(label_to_indices.keys()))
+                # print(f"choose label {label}")
+                if label_to_indices[label]:
+                    if label not in used_labels:
+                        idx = label_to_indices[label].pop()
+                        batch.append(idx)
+                        used_labels.add(label)
+                        # if not label_to_indices[label]:
+                        #     del label_to_indices[label]
+                else:
+                    if label not in used_labels:
+                        idx = self.label_to_indices[label][-1]
+                        batch.append(idx)
+                        used_labels.add(label)
+                    
+                    # for i, l in enumerate(used_labels):
+                    #     label_to_indices[l].append(batch[i])
+                    # break
+                if len(used_labels) == self.num_classes:
+                    break
+                attempt_count += 1
+            if len(batch) == self.batch_size:
+                batches.append(batch)
+            else:
+                print("Failed to form a complete batch, retrying...")
+                break
+            # print(attempt_count, len(batches) * self.batch_size)
+        random.shuffle(batches)
+        # print(11111111111)
+        return iter([idx for batch in batches for idx in batch])
+    
+    def __len__(self):
+        return len(self.data_source)
+
 def get_rmnist_loaders(args, client, logger):
     data = eval("RotatedMNIST")(root="/data/mwj/data/")
     train_datas, train_loaders = {}, {}
@@ -168,8 +234,9 @@ def get_rmnist_loaders(args, client, logger):
             import copy
             valid_datas[s_domain_idx].dataset = copy.copy(valid_datas[s_domain_idx].dataset)
             valid_datas[s_domain_idx].dataset.transform = data.transform
-
-        train_loaders[s_domain_idx] = DataLoader(train_datas[s_domain_idx], batch_size=args.batch_size, shuffle=True, num_workers=args.workers,pin_memory=args.pin)
+        # DataLoader
+        sampler = UniqueLabelSampler(train_datas[s_domain_idx])
+        train_loaders[s_domain_idx] = DataLoader(train_datas[s_domain_idx], batch_size=10, shuffle=True, num_workers=args.workers,pin_memory=args.pin, sampler=sampler)
         valid_loaders[s_domain_idx] = DataLoader(valid_datas[s_domain_idx], batch_size=args.batch_size, shuffle=False, num_workers=args.workers,pin_memory=args.pin)
 
     logger.info(f"unseen domain: {client[target_domain_idx]}")

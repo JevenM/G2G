@@ -338,6 +338,31 @@ class Generator(nn.Module):
         out = self.gen(out)
         return out
 
+class Generator1(nn.Module):
+    def __init__(self, num_classes=10, flat_img=784):
+        super(Generator1, self).__init__()
+        self.gen = nn.Sequential(
+            nn.Linear(flat_img+num_classes, 128),
+            nn.LeakyReLU(0.2),
+            nn.Linear(128, 256),
+            nn.BatchNorm1d(256),
+            nn.LeakyReLU(0.2),
+            nn.Linear(256, 512),
+            nn.BatchNorm1d(512),
+            nn.LeakyReLU(0.2),
+            nn.Linear(512, 1024),
+            nn.BatchNorm1d(1024),
+            nn.LeakyReLU(0.2),
+            nn.Linear(1024, flat_img),
+            nn.Tanh()
+        )
+
+    def forward(self, x, y):
+        out = torch.cat((x, y), dim=1)
+        out = self.gen(out)
+        return out
+
+
 # 定义对比学习模型
 class SimCLR(nn.Module):
     def __init__(self, args, in_channel):

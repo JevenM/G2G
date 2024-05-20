@@ -67,6 +67,7 @@ class Node(object):
         else:
             flatten_dim = 225*225*3
             in_channel = 3
+        # self.gen_model = Model.Generator1(args.classes, flatten_dim).to(self.device)
         self.gen_model = Model.Generator(args.latent_space, args.classes, flatten_dim).to(self.device)
         self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=args.gen_lr, weight_decay=5e-4)
         if args.method == 'simclr':
@@ -125,6 +126,7 @@ class Global_Node(object):
         if args.dataset == 'rotatedmnist':
             in_channel = 1
             self.gen_model = Model.Generator(args.latent_space, args.classes, 28*28).to(self.device)
+            # self.gen_model = Model.Generator1(args.classes).to(self.device)
             if args.method == 'simclr':
                 self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
             elif args.method == 'simsiam':
