@@ -55,6 +55,9 @@ def args_parser():
     parser.add_argument('--save_model', type=bool, default=False,
                         help='')
     
+    parser.add_argument('--server_e', type=int, default=10,
+                        help='')
+    
     # Data
     parser.add_argument('--dataset', type=str, default='vlcs',
                         help='datasets: {air_ori, air, pacs, cifar100, cifar10, femnist, office-home, mnist, rotatedmnist}')
