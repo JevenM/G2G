@@ -21,12 +21,14 @@ class Data(object):
         if args.dataset == 'rotatedmnist':
             self.trainset, self.testset = None, None
             if iteration == 0:
+                print(iteration, 0000000000000)
                 client = [0, 15, 30, 45, 60, 75]
             if iteration == 1:
                 client = [15, 30, 45, 60, 75, 0]
             if iteration == 2:
                 client = [30, 45, 60, 75, 0, 15]
             if iteration == 3:
+                print(iteration, 333333333)
                 client = [45, 60, 75, 0, 15, 30]
             if iteration == 4:
                 client = [60, 75, 0, 15, 30, 45]
@@ -122,10 +124,9 @@ class MultipleEnvironmentMNIST(MultipleDomainDataset):
         self.num_classes = num_classes
 
 class RotatedMNIST(MultipleEnvironmentMNIST):
-    ENVIRONMENTS = ['0', '15', '30', '45', '60', '75']
 
-    def __init__(self, root):
-        super(RotatedMNIST, self).__init__(root, [0, 15, 30, 45, 60, 75],
+    def __init__(self, root, environments):
+        super(RotatedMNIST, self).__init__(root, environments,
                                            self.rotate_dataset, (1, 28, 28,), 10)
 
     def rotate_dataset(self, images, labels, angle):
@@ -226,7 +227,7 @@ class UniqueLabelSampler(Sampler):
 '''
 
 def get_rmnist_loaders(args, client, logger):
-    data = eval("RotatedMNIST")(root="/data/mwj/data/")
+    data = eval("RotatedMNIST")(root="/data/mwj/data/", environments=client)
     train_datas, train_loaders = {}, {}
     valid_datas, valid_loaders = {}, {}
     target_domain_idx = len(client)-1

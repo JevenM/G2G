@@ -321,19 +321,32 @@ class Generator(nn.Module):
     def __init__(self, latent_space, num_classes, flat_img):
         super(Generator, self).__init__()
         self.gen = nn.Sequential(
-            nn.Linear(latent_space+num_classes, 128),
+            nn.Linear(latent_space+num_classes, 32),
+            nn.LeakyReLU(0.2),
+            nn.Linear(32, 64),
+            nn.BatchNorm1d(64),
+            nn.LeakyReLU(0.2),
+            nn.Linear(64, 128),
+            nn.BatchNorm1d(128),
             nn.LeakyReLU(0.2),
             nn.Linear(128, 256),
             nn.BatchNorm1d(256),
             nn.LeakyReLU(0.2),
-            nn.Linear(256, 512),
-            nn.BatchNorm1d(512),
-            nn.LeakyReLU(0.2),
-            nn.Linear(512, 1024),
-            nn.BatchNorm1d(1024),
-            nn.LeakyReLU(0.2),
-            nn.Linear(1024, flat_img),
+            nn.Linear(256, flat_img),
             nn.Tanh()
+            # nn.Linear(latent_space+num_classes, 128),
+            # nn.LeakyReLU(0.2),
+            # nn.Linear(128, 256),
+            # nn.BatchNorm1d(256),
+            # nn.LeakyReLU(0.2),
+            # nn.Linear(256, 512),
+            # nn.BatchNorm1d(512),
+            # nn.LeakyReLU(0.2),
+            # nn.Linear(512, 1024),
+            # nn.BatchNorm1d(1024),
+            # nn.LeakyReLU(0.2),
+            # nn.Linear(1024, flat_img),
+            # nn.Tanh()
         )
 
     def forward(self, x, y):
@@ -345,18 +358,18 @@ class Generator1(nn.Module):
     def __init__(self, num_classes=10, flat_img=784):
         super(Generator1, self).__init__()
         self.gen = nn.Sequential(
-            nn.Linear(flat_img+num_classes, 128),
+            nn.Linear(flat_img+num_classes, 32),
+            nn.LeakyReLU(0.2),
+            nn.Linear(32, 64),
+            nn.BatchNorm1d(64),
+            nn.LeakyReLU(0.2),
+            nn.Linear(64, 128),
+            nn.BatchNorm1d(128),
             nn.LeakyReLU(0.2),
             nn.Linear(128, 256),
             nn.BatchNorm1d(256),
             nn.LeakyReLU(0.2),
-            nn.Linear(256, 512),
-            nn.BatchNorm1d(512),
-            nn.LeakyReLU(0.2),
-            nn.Linear(512, 1024),
-            nn.BatchNorm1d(1024),
-            nn.LeakyReLU(0.2),
-            nn.Linear(1024, flat_img),
+            nn.Linear(256, flat_img),
             nn.Tanh()
         )
 
@@ -449,7 +462,7 @@ class SimCLR(nn.Module):
     def __init__(self, args, in_channel):
         super(SimCLR, self).__init__()
         if args.dataset == 'rotatedmnist':
-            self.encoder = nn.Sequential(
+            '''
                 nn.Conv2d(in_channels=in_channel, out_channels=64, kernel_size=3, stride=1, padding=1),
                 nn.BatchNorm2d(64),
                 nn.ReLU(),
@@ -468,16 +481,29 @@ class SimCLR(nn.Module):
                 # nn.ReLU(),
                 # nn.Linear(1024, 120),
                 # nn.ReLU()
+                '''
+            self.encoder = nn.Sequential(
+                nn.Conv2d(in_channels=in_channel, out_channels=16, kernel_size=5, padding=2),
+                nn.BatchNorm2d(16),
+                nn.ReLU(),
+                nn.MaxPool2d(2), # 14x14x32
+                nn.Conv2d(in_channels=16, out_channels=32, kernel_size=5, padding=2),
+                nn.BatchNorm2d(32),
+                nn.ReLU(),
+                nn.MaxPool2d(2), # 7x7x64
+                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2),
+                nn.BatchNorm2d(64),
+                nn.ReLU(),
+                nn.MaxPool2d(2), # 3X3x64
+                Flatten(),
             )
             self.projection_head = nn.Sequential(
                 nn.ReLU(),
-                nn.Linear(1024, 512),
-                nn.ReLU(),
-                nn.Linear(512, args.embedding_d)
+                nn.Linear(576, args.embedding_d)
             )
             self.prediction = nn.Sequential(
                 nn.ReLU(),
-                nn.Dropout(0.5),
+                # nn.Dropout(0.5),
                 nn.Linear(args.embedding_d, args.classes)
             )
         else:
@@ -497,7 +523,7 @@ class SimCLR(nn.Module):
                 ("drop7", nn.Dropout())
             ]))
 
-        self.initial_params()
+        # self.initial_params()
 
     def initial_params(self):
         for layer in self.modules():
@@ -517,13 +543,13 @@ class Discriminator(nn.Module):
     def __init__(self, flat_img, num_classes):
         super(Discriminator, self).__init__()
         self.dis = nn.Sequential(
-            nn.Linear(flat_img+num_classes, 512),  # 输入特征数为784，输出为512
-            nn.BatchNorm1d(512),
+            nn.Linear(flat_img+num_classes, 128),  # 输入特征数为784，输出为512
+            nn.BatchNorm1d(128),
             nn.LeakyReLU(0.2),  # 进行非线性映射
-            nn.Linear(512, 256),  # 进行一个线性映射
-            nn.BatchNorm1d(256),
+            nn.Linear(128, 64),  # 进行一个线性映射
+            nn.BatchNorm1d(64),
             nn.LeakyReLU(0.2),
-            nn.Linear(256, 1)
+            nn.Linear(64, 1)
         )
 
     def forward(self, x, y):

@@ -6,12 +6,56 @@ import numpy as np
 import seaborn as sns
 import random
 import os
+import torch.nn as nn
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from torchvision.models.feature_extraction import create_feature_extractor
 from datetime import datetime
 import matplotlib.pyplot as plt
-import torchvision.transforms.functional as F
+import torch.nn.functional as F
+
+'''
+def softmax_kl_loss(input_logits, target_logits):
+    """Takes softmax on both sides and returns KL divergence
+    Note:
+    - Returns the sum over all examples. Divide by the batch size afterwards
+      if you want the mean.
+    - Sends gradients to inputs but not the targets.
+    """
+    assert input_logits.size() == target_logits.size()
+    input_log_softmax = F.log_softmax(input_logits, dim=1)
+    target_softmax = F.softmax(target_logits, dim=1)
+    return F.kl_div(input_log_softmax, target_softmax, size_average=False)
+'''
+
+class KL_Loss(nn.Module):
+    def __init__(self, temperature=1):
+        super(KL_Loss, self).__init__()
+        self.T = temperature
+
+    def forward(self, output_batch, teacher_outputs):
+        # output_batch  -> B X num_classes
+        # teacher_outputs -> B X num_classes
+
+        output_batch = F.log_softmax(output_batch / self.T, dim=1)
+        teacher_outputs = F.softmax(
+            teacher_outputs / self.T, dim=1) + 10 ** (-7)
+
+        loss = self.T * self.T * \
+            nn.KLDivLoss(reduction='batchmean')(output_batch, teacher_outputs)
+
+        # Same result KL-loss implementation
+        # loss = T * T * torch.sum(torch.sum(torch.mul(teacher_outputs, torch.log(teacher_outputs) - output_batch)))/teacher_outputs.size(0)
+        return loss
+
+def Norm_(x, y):
+    # print(x.shape, y.size())
+    temp = torch.norm(x - y, dim=-1, p=2)
+    # print(temp.shape)
+    distances = temp.mean()
+    # print(distances)
+    return distances
+        
 
 class GradualWarmupScheduler(_LRScheduler):
 
@@ -105,6 +149,7 @@ class Recorder(object):
                 output = node.cl_model(data)
                 if isinstance(output, tuple) and self.args.algorithm == 'fed_adv':
                     features, embed, outputs = output
+                    features = F.normalize(features, p=2, dim=1)
                     if node.prototypes_global is None:
                         pred = compute_distances(features, node.prototypes)
                     else:
@@ -182,6 +227,7 @@ class Recorder(object):
                 else:
                     output = node.cl_model(data)
                 features, _, outputs = output
+                features = F.normalize(features, p=2, dim=1)
                 true_labels.extend(target.cpu().numpy())
                 if self.args.algorithm == 'fed_adv':
                     if node.prototypes_global is None:
@@ -189,17 +235,20 @@ class Recorder(object):
                     else:
                         pred = compute_distances(features, node.prototypes_global)
                     pred_labels.extend(pred.cpu().numpy())
-                    accuracy1 = accuracy_score(true_labels, pred_labels)
+                    
                     
                 # similarity_scores = torch.matmul(features, prototypes.t())  # 计算相似度(效果不如L2)
                 # _, pred = torch.max(similarity_scores, dim=1)  # 选择最相似的类别作为预测标签
                 _, outd = torch.max(outputs, dim=1)
                 out_labels.extend(outd.cpu().numpy())
-
+            
             accuracy2 = accuracy_score(true_labels, out_labels)
             self.logger.info(f'c{node.num} on Target: test Accuracy: {accuracy2}')
+            accuracy1 = 0.0
+            if self.args.algorithm == 'fed_adv':
+                accuracy1 = accuracy_score(true_labels, pred_labels)
+                self.logger.info(f'c{node.num} on Target: pseudo Accuracy: {accuracy1}')
             acc = max(accuracy1, accuracy2) * 100
-            self.logger.info(f'c{node.num} on Target: pseudo Accuracy: {accuracy1}')
             self.logger.info(f"Better Acc of c{node.num} on Target domain is {acc}%")
             self.target_acc[str(node.num)].append(acc)
             sw.add_scalar(f'Test-target/{node.num}/pseu', accuracy1, round+1)
@@ -216,6 +265,7 @@ class Recorder(object):
                 data, target = data.to(node.device), target.to(node.device)
                 output = node.model(data)
                 feature, embed, outputs = output
+                feature = F.normalize(feature, p=2, dim=1)
                 pred = compute_distances(feature, node.proto)
                 _, outd = torch.max(outputs, dim=1)
                 true_labels.extend(target.cpu().numpy())
@@ -230,6 +280,8 @@ class Recorder(object):
             self.logger.info(f"Better Acc of c{node.num} on Target domain is {acc}%")
             self.target_acc[str(node.num)].append(acc)
             sw.add_scalar(f'Test-target/{node.num}', acc, round+1)
+            sw.add_scalar(f'Test-target/{node.num}/pseu', accuracy1, round+1)
+            sw.add_scalar(f'Test-target/{node.num}/true', accuracy2, round+1)
 
     def log(self, node):
         # print(node.num)
@@ -374,7 +426,11 @@ def dimension_reduction(node, Data, round):
 
 # 计算距离矩阵
 def compute_distances(features, prototypes):
-    distances = torch.norm(torch.stack([f - prototypes for f in features]), dim=2)
+    distances = torch.norm(torch.stack([f - prototypes for f in features]), dim=2)  
+    # features = F.softmax(features, dim=1)
+    # prototypes = F.softmax(prototypes, dim=1)
+    # distances = torch.stack([F.kl_div(f.log(), prototypes, reduction='none').sum(dim=1) for f in features])
+    
     return torch.argmin(distances, dim=1)
 
 def to_img(x, dataset):

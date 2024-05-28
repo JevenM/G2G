@@ -76,19 +76,13 @@ for rounds in range(args.R):
             Node_List[k].fork(Global_node)
 
         for epoch in range(args.E):
-            if args.algorithm == 'fed_adv':
-                if rounds < args.R/2:
-                    Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
-                else:
-                    pass
-            else:
-                Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
+            Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
+
         if args.algorithm == 'fed_adv':
-            if rounds >= args.R/2:
-                train_ssl(Node_List[k], args, logger, rounds, summary_writer)
-                # train_classifier(Node_List[k], args, logger, rounds, summary_writer)
-                recorder.validate(Node_List[k], summary_writer)
-                recorder.test_on_target(Node_List[k], summary_writer, rounds)
+            train_ssl(Node_List[k], args, logger, rounds, summary_writer)
+            # train_classifier(Node_List[k], args, logger, rounds, summary_writer)
+            # recorder.validate(Node_List[k], summary_writer)
+            recorder.test_on_target(Node_List[k], summary_writer, rounds)
             if rounds == args.R-1:
                 dimension_reduction(Node_List[k], Data, rounds)
         elif args.algorithm == 'fed_mutual':
@@ -107,16 +101,20 @@ for rounds in range(args.R):
         Global_node.merge_weights_gen(Node_List, acc_list)
         for n_ in range(len(Node_List)):
             Node_List[n_].local_fork_gen(Global_node)
-            # train_fc(Node_List[n_], args, logger, rounds, summary_writer)
-        if rounds >= args.R/2:
-            proto = Global_node.aggregate(Node_List)
-            Global_node.merge_weights_ssl(Node_List, acc_list)
-            Global_node.train_classifier(rounds, logger, summary_writer)
-            recorder.server_test_on_target(Global_node, summary_writer, rounds)
-            for k_ in range(len(Node_List)):
-                Node_List[k_].fork_proto(proto)
-                Node_List[k_].local_fork_ssl(Global_node)
-            logger.info(f"iter: {args.iteration}, epoch: {rounds}")
+            train_fc(Node_List[n_], args, logger, rounds, summary_writer)
+
+        proto = Global_node.aggregate(Node_List)
+        Global_node.merge_weights_ssl(Node_List, acc_list)
+        # TODO 在服务器上利用target数据进行simclr对比学习
+        # Global_node.train(rounds, logger, summary_writer)
+        
+        recorder.server_test_on_target(Global_node, summary_writer, rounds)
+        for k_ in range(len(Node_List)):
+            Node_List[k_].fork_proto(proto)
+            Node_List[k_].local_fork_ssl(Global_node)
+            recorder.validate(Node_List[k_], summary_writer)
+            
+        logger.info(f"iter: {args.iteration}, epoch: {rounds}")
 
     elif args.algorithm != 'fed_adv':
         if args.algorithm == 'fed_avg':
