@@ -3,7 +3,7 @@ from Node import Node, Global_Node
 from Args import args_parser
 from Data import Data
 from utils import LR_scheduler, Recorder, exp_details, Summary, dimension_reduction
-from Trainer import Trainer, train_classifier, train_fc, train_ssl
+from Trainer import Trainer, train_classifier, train_fc, train_ssl, train_ssl1
 from log import logger_config, set_random_seed
 from datetime import datetime
 import os
@@ -79,9 +79,8 @@ for rounds in range(args.R):
             Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
             
         if args.algorithm == 'fed_adv':
-            if rounds >= 1:
-                train_ssl(Node_List[k], args, logger, rounds, summary_writer)
-                # train_classifier(Node_List[k], args, logger, rounds, summary_writer)
+            train_ssl(Node_List[k], args, logger, rounds, summary_writer)
+            # train_classifier(Node_List[k], args, logger, rounds, summary_writer)
             recorder.validate(Node_List[k], summary_writer)
             recorder.test_on_target(Node_List[k], summary_writer, rounds)
             if rounds == args.R-1:

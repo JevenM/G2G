@@ -462,50 +462,48 @@ class SimCLR(nn.Module):
     def __init__(self, args, in_channel):
         super(SimCLR, self).__init__()
         if args.dataset == 'rotatedmnist':
-            self.encoder = nn.Sequential(
-                nn.Conv2d(in_channels=in_channel, out_channels=64, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm2d(64),
-                nn.ReLU(),
-                nn.MaxPool2d(kernel_size=2, stride=2),
-                nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm2d(128),
-                nn.ReLU(),
-                nn.MaxPool2d(kernel_size=2, stride=2),
-                # MixStyle(p=0.5, alpha=0.1),
-                nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=2, padding=1),
-                nn.BatchNorm2d(256),
-                nn.ReLU(),
-                nn.MaxPool2d(kernel_size=2, stride=2),
-                Flatten(),
-                # nn.Linear(1024, 1024),
-                # nn.ReLU(),
-                # nn.Linear(1024, 120),
-                # nn.ReLU()
-            )
             # self.encoder = nn.Sequential(
-            #     nn.Conv2d(in_channels=in_channel, out_channels=16, kernel_size=5, padding=2),
-            #     nn.BatchNorm2d(16),
-            #     nn.ReLU(),
-            #     nn.MaxPool2d(2), # 14x14x32
-            #     nn.Conv2d(in_channels=16, out_channels=32, kernel_size=5, padding=2),
-            #     nn.BatchNorm2d(32),
-            #     nn.ReLU(),
-            #     nn.MaxPool2d(2), # 7x7x64
-            #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2),
+            #     nn.Conv2d(in_channels=in_channel, out_channels=64, kernel_size=3, stride=1, padding=1),
             #     nn.BatchNorm2d(64),
             #     nn.ReLU(),
-            #     nn.MaxPool2d(2), # 3X3x64
+            #     nn.MaxPool2d(kernel_size=2, stride=2),
+            #     nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
+            #     nn.BatchNorm2d(128),
+            #     nn.ReLU(),
+            #     nn.MaxPool2d(kernel_size=2, stride=2),
+            #     # MixStyle(p=0.5, alpha=0.1),
+            #     nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=2, padding=1),
+            #     nn.BatchNorm2d(256),
+            #     nn.ReLU(),
+            #     nn.MaxPool2d(kernel_size=2, stride=2),
             #     Flatten(),
-            #     nn.Linear(576, 1024),
-            #     nn.ReLU()
+            #     # nn.Linear(1024, 1024),
+            #     # nn.ReLU(),
+            #     # nn.Linear(1024, 120),
+            #     # nn.ReLU()
             # )
+            self.encoder = nn.Sequential(
+                nn.Conv2d(in_channels=in_channel, out_channels=16, kernel_size=5, padding=2),
+                nn.BatchNorm2d(16),
+                nn.ReLU(),
+                nn.MaxPool2d(2), # 14x14x32
+                nn.Conv2d(in_channels=16, out_channels=32, kernel_size=5, padding=2),
+                nn.BatchNorm2d(32),
+                nn.ReLU(),
+                nn.MaxPool2d(2), # 7x7x64
+                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2),
+                nn.BatchNorm2d(64),
+                nn.ReLU(),
+                nn.MaxPool2d(2), # 3X3x64
+                Flatten(),
+                nn.Linear(576, 1024)
+            )
             self.projection_head = nn.Sequential(
                 nn.ReLU(),
                 nn.Linear(1024, args.embedding_d),
             )
             self.prediction = nn.Sequential(
                 nn.ReLU(),
-                nn.Dropout(0.5),
                 nn.Linear(args.embedding_d, args.classes)
             )
         else:
@@ -524,14 +522,6 @@ class SimCLR(nn.Module):
                 ("relu7", nn.ReLU(inplace=True)),
                 ("drop7", nn.Dropout())
             ]))
-
-        self.initial_params()
-
-    def initial_params(self):
-        for layer in self.modules():
-            if isinstance(layer,torch.nn.Linear):
-                init.xavier_uniform_(layer.weight,0.1)
-                layer.bias.data.zero_()
 
     def forward(self, x):
         feature = self.encoder(x)

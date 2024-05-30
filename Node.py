@@ -79,7 +79,7 @@ class Node(object):
             self.cl_model = SimSiam(in_channel).to(self.device)
         else:
             self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
-        self.optm_cl = optim.SGD(self.cl_model.parameters(), lr=args.cl_lr, momentum=args.momentum, weight_decay=5e-4)
+        self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=args.cl_lr, weight_decay=5e-4)
         self.optm_fc = optim.SGD(self.cl_model.prediction.parameters(), lr=args.cls_lr, weight_decay=5e-4)
         self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=100, gamma=0.99)
         # 判断是否是真样本
@@ -119,10 +119,12 @@ class Node(object):
         # print(f"global: {global_model.model.state_dict()}")
         # self.clser.load_state_dict(global_model.model.state_dict())
         self.cl_model = copy.deepcopy(global_model.model)
+        self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=self.args.cl_lr, weight_decay=5e-4)
 
     def local_fork_gen(self, global_model):
         # print(f"global: {global_model.model.state_dict()}")
         self.gen_model = copy.deepcopy(global_model.gen_model)
+        self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=self.args.gen_lr, weight_decay=5e-4)
 
     def fork_proto(self, protos):
         self.prototypes_global = protos

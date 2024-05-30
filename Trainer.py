@@ -327,11 +327,12 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
             loss_gen = criterion_BCE(gen_outputs, real_labels)
             gen_outputs1 = node.disc_model2(gen_images)
             loss_gen1 = criterion_BCE(gen_outputs1, real_labels)
-            _,_,out = node.cl_model(gen_images.view(gen_images.size(0), 1, 28, 28))
-            loss_cls = CE_Loss(out, labels_cuda)
+            # _,_,out = node.cl_model(gen_images.view(gen_images.size(0), 1, 28, 28))
+            # loss_cls = CE_Loss(out, labels_cuda)
             # loss_gen = loss_gen + loss
             # loss_gen = torch.log(1.0 - (discriminator(gen_images)).detach()) 
-            loss_g = loss_gen1 + loss_gen + loss_cls
+            # loss_g = loss_gen1 + loss_gen + loss_cls
+            loss_g = loss_gen1 + loss_gen
             loss_g.backward()
             node.optm_gen.step()
         # print(f'Epoch [{epoch+1}/10] [{i+1/str(gen_e)}], Loss: {loss.item()}, Loss Gen: {loss_gen.item()}')
@@ -475,7 +476,7 @@ def train_ssl(node, args, logger, round, sw=None):
             
             z = torch.randn(batchsize, args.latent_space).to(node.device)
             # lab_ = torch.randint(0, 10, (batchsize,))
-            num_same = batchsize // 2
+            num_same = batchsize // 4
             num_random = batchsize - num_same
             lab_same = labels.cpu()[torch.randperm(batchsize)[:num_same]]
             # 生成剩余 num_random 个随机元素
@@ -502,100 +503,99 @@ def train_ssl(node, args, logger, round, sw=None):
                 in_c = 3
             feature1, embeddings_orig, out_r = node.cl_model(real_images.view(batchsize, in_c, w_h, w_h))
             feature2, embeddings_gen, out_f = node.cl_model(fake_images.view(batchsize, in_c, w_h, w_h))
-            
-            
+            ls_ = 0
+            if round >= args.R / 2:
+                cc1 = torch.zeros(args.classes)
+                proto1 = torch.zeros(args.classes, 1024).to(args.device)
+                cc2 = torch.zeros(args.classes)
+                proto2 = torch.zeros(args.classes, 1024).to(args.device)
+                # 遍历z1对应的label
+                for i in range(args.classes):  # 遍历每个类别
+                    class_ind = (labels == i)  # 找到属于当前类别的样本的索引
+                    class_outputs = feature1[class_ind]  # 提取属于当前类别的样本的特征向量
+                    # class_outputs = embeddings_orig[class_ind]  # 提取属于当前类别的样本的特征向量
+                    proto1[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
+                    cc1[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
+                    class_ind2 = (lab_ == i)  # 找到属于当前类别的样本的索引
+                    class_outputs2 = feature2[class_ind2]  # 提取属于当前类别的样本的特征向量
+                    # class_outputs2 = embeddings_gen[class_ind2]  # 提取属于当前类别的样本的特征向量
+                    proto2[i] += torch.sum(class_outputs2, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
+                    cc2[i] += class_outputs2.shape[0]  # 统计当前类别的样本数量
 
-            cc1 = torch.zeros(args.classes)
-            proto1 = torch.zeros(args.classes, 1024).to(args.device)
-            cc2 = torch.zeros(args.classes)
-            proto2 = torch.zeros(args.classes, 1024).to(args.device)
-            # 遍历z1对应的label
-            for i in range(args.classes):  # 遍历每个类别
-                class_ind = (labels == i)  # 找到属于当前类别的样本的索引
-                class_outputs = feature1[class_ind]  # 提取属于当前类别的样本的特征向量
-                # class_outputs = embeddings_orig[class_ind]  # 提取属于当前类别的样本的特征向量
-                proto1[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
-                cc1[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
-                class_ind2 = (lab_ == i)  # 找到属于当前类别的样本的索引
-                class_outputs2 = feature2[class_ind2]  # 提取属于当前类别的样本的特征向量
-                # class_outputs2 = embeddings_gen[class_ind2]  # 提取属于当前类别的样本的特征向量
-                proto2[i] += torch.sum(class_outputs2, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
-                cc2[i] += class_outputs2.shape[0]  # 统计当前类别的样本数量
+                # 计算每个类别的平均特征向量
+                for i in range(args.classes):
+                    if cc1[i] > 0:
+                        proto1[i] /= cc1[i]
+                    if cc2[i] > 0:
+                        proto2[i] /= cc2[i]
+                # L2 归一化
+                # proto1 = F.normalize(proto1, p=2, dim=1)
+                # proto2 = F.normalize(proto2, p=2, dim=1)
+                # if node.prototypes_global is None:
+                #     ou_loss_f = Norm_(proto1, node.prototypes.detach())
+                #     ou_loss_f1 = Norm_(proto2, node.prototypes.detach())
+                # else:
+                #     ou_loss_f = Norm_(proto1, node.prototypes_global.detach())
+                #     ou_loss_f1 = Norm_(proto2, node.prototypes_global.detach())
+                ou_loss_norm = Norm_(proto1, node.prototypes_global.detach())
+                ou_loss_norm1 = Norm_(proto2, node.prototypes_global.detach())
+                '''样本级别
+                feature1 = F.normalize(feature1, p=2, dim=1)
+                feature2 = F.normalize(feature2, p=2, dim=1)
+                if node.prototypes_global is None:
+                    node.prototypes = node.prototypes.detach()
+                    # pseudo_labels_f = compute_distances(feature2, node.prototypes)
+                    # cos_loss_f = KL_Loss(LogSoftmax(feature2), Softmax(node.prototypes[lab_].detach()))
+                    ou_loss_f1 = Norm_(feature2, node.prototypes[lab_].detach())
+                    ou_loss_f = Norm_(feature1, node.prototypes[labels].detach())
+                else:
+                    node.prototypes_global = node.prototypes_global.detach()
+                    # pseudo_labels_f = compute_distances(feature2, node.prototypes_global)
+                    # ou_loss_f = KL_Loss(LogSoftmax(feature2), Softmax(node.prototypes_global[lab_].detach()))
+                    ou_loss_f1 = Norm_(feature2, node.prototypes_global[lab_].detach())
+                    ou_loss_f = Norm_(feature1, node.prototypes_global[labels].detach())
+                '''
+                
+                # pseudo_labels_f = pseudo_labels_f.detach()
+                # loss_ce_f = CE_Loss(out_f, pseudo_labels_f)  # 使用伪标签计算交叉熵损失
 
-            # 计算每个类别的平均特征向量
-            for i in range(args.classes):
-                if cc1[i] > 0:
-                    proto1[i] /= cc1[i]
-                if cc2[i] > 0:
-                    proto2[i] /= cc2[i]
-            # L2 归一化
-            # proto1 = F.normalize(proto1, p=2, dim=1)
-            # proto2 = F.normalize(proto2, p=2, dim=1)
-            # if node.prototypes_global is None:
-            #     ou_loss_f = Norm_(proto1, node.prototypes.detach())
-            #     ou_loss_f1 = Norm_(proto2, node.prototypes.detach())
-            # else:
-            #     ou_loss_f = Norm_(proto1, node.prototypes_global.detach())
-            #     ou_loss_f1 = Norm_(proto2, node.prototypes_global.detach())
-            ou_loss_norm = Norm_(proto1, node.prototypes_global.detach())
-            ou_loss_norm1 = Norm_(proto2, node.prototypes_global.detach())
-            '''样本级别
-            feature1 = F.normalize(feature1, p=2, dim=1)
-            feature2 = F.normalize(feature2, p=2, dim=1)
-            if node.prototypes_global is None:
-                node.prototypes = node.prototypes.detach()
-                # pseudo_labels_f = compute_distances(feature2, node.prototypes)
-                # cos_loss_f = KL_Loss(LogSoftmax(feature2), Softmax(node.prototypes[lab_].detach()))
-                ou_loss_f1 = Norm_(feature2, node.prototypes[lab_].detach())
-                ou_loss_f = Norm_(feature1, node.prototypes[labels].detach())
-            else:
-                node.prototypes_global = node.prototypes_global.detach()
-                # pseudo_labels_f = compute_distances(feature2, node.prototypes_global)
-                # ou_loss_f = KL_Loss(LogSoftmax(feature2), Softmax(node.prototypes_global[lab_].detach()))
-                ou_loss_f1 = Norm_(feature2, node.prototypes_global[lab_].detach())
-                ou_loss_f = Norm_(feature1, node.prototypes_global[labels].detach())
-            '''
-            
-            # pseudo_labels_f = pseudo_labels_f.detach()
-            # loss_ce_f = CE_Loss(out_f, pseudo_labels_f)  # 使用伪标签计算交叉熵损失
+                running_ls_norm += ou_loss_norm.item()
+                running_ls_norm1 += ou_loss_norm1.item()
 
-            running_ls_norm += ou_loss_norm.item()
-            running_ls_norm1 += ou_loss_norm1.item()
+                if args.method == 'simclr':
+                    ls_ = NT_XentLoss(embeddings_orig, embeddings_gen)
+                elif args.method == 'simsiam':
+                    ls_ = D(embeddings_orig, feature2) / 2 + D(embeddings_gen, feature1) / 2
+                elif args.method == 'ccsa':
+                    lab_ = lab_.to(node.device)
+                    ls_ = csa_loss(embeddings_orig, embeddings_gen, (labels == lab_).float(), args.device)
+                elif args.method == 'ssl':
+                    lab_ = lab_.to(node.device)
+                    # 1. 将张量 A 中的每一行重复 10 次，得到 A'
+                    A_prime = proto2.repeat_interleave(args.classes, dim=0)
 
-            if args.method == 'simclr':
-                ls_ = NT_XentLoss(embeddings_orig, embeddings_gen)
-            elif args.method == 'simsiam':
-                ls_ = D(embeddings_orig, feature2) / 2 + D(embeddings_gen, feature1) / 2
-            elif args.method == 'ccsa':
-                lab_ = lab_.to(node.device)
-                ls_ = csa_loss(embeddings_orig, embeddings_gen, (labels == lab_).float(), args.device)
-            elif args.method == 'ssl':
-                lab_ = lab_.to(node.device)
-                # 1. 将张量 A 中的每一行重复 10 次，得到 A'
-                A_prime = proto2.repeat_interleave(args.classes, dim=0)
+                    # 2. 将张量 B 进行 10 次堆叠，得到 B'
+                    B_prime = node.prototypes_global.repeat(args.classes, 1)
 
-                # 2. 将张量 B 进行 10 次堆叠，得到 B'
-                B_prime = node.prototypes_global.repeat(args.classes, 1)
+                    # 3. 创建索引张量 C，表示 A' 中每一行在原始张量 A 中的索引号
+                    C = torch.arange(args.classes).repeat_interleave(args.classes)
 
-                # 3. 创建索引张量 C，表示 A' 中每一行在原始张量 A 中的索引号
-                C = torch.arange(args.classes).repeat_interleave(args.classes)
-
-                # 4. 创建索引张量 D，表示 B' 中每一行在原始张量 B 中的索引号
-                D = torch.arange(args.classes).repeat(args.classes)
-                ls_ = ssl_loss(A_prime, B_prime.detach(), (C == D).float(), args.device)
-            elif args.method == 'infonce':
-                ls_ = info_nce_loss(proto2, node.prototypes_global.detach())
-            running_loss_ssl += ls_.item()
+                    # 4. 创建索引张量 D，表示 B' 中每一行在原始张量 B 中的索引号
+                    D = torch.arange(args.classes).repeat(args.classes)
+                    ls_ = ssl_loss(A_prime, B_prime.detach(), (C == D).float(), args.device)
+                elif args.method == 'infonce':
+                    ls_ = info_nce_loss(proto2, node.prototypes_global.detach())
+                running_loss_ssl += ls_.item()
             
             loss_ce_true = CE_Loss(out_r, labels)  # 使用logits计算交叉熵损失
             running_loss_ce_t += loss_ce_true.item()
 
-            # loss_ce_f = CE_Loss(out_f, lab_.to(node.device))
-            # running_loss_ce_f += loss_ce_f.item()
+            loss_ce_f = CE_Loss(out_f, lab_.to(node.device))
+            running_loss_ce_f += loss_ce_f.item()
 
             # loss = ou_loss_f + loss_ce_f + loss_ce_true + ls_
             # loss = ou_loss_norm + ou_loss_norm1 + loss_ce_true + ls_
-            loss = loss_ce_true
+            loss = loss_ce_true + loss_ce_f + ls_
         
             '''
             # 计算对比学习的损失
@@ -631,6 +631,67 @@ def train_ssl(node, args, logger, round, sw=None):
         sw.add_scalar(f'Train-ssl/ssl_ls/{node.num}', running_loss_ssl / len(train_loader), round*args.simclr_e+k) # type: ignore
         sw.add_scalar(f'Train-ssl/loss/{node.num}', ls / len(train_loader), round*args.simclr_e+k) # type: ignore
         logger.info('Epoch [%d/%d], node %d: Loss_ce_t: %.4f, Loss_sim: %.4f, Loss_sim1: %.4f, Loss_ce_f: %.4f, Loss_ssl: %.4f, total loss: %.4f' % (k+1, args.simclr_e, node.num, running_loss_ce_t / len(train_loader), running_ls_norm / len(train_loader), running_ls_norm1 / len(train_loader), running_loss_ce_f / len(train_loader), running_loss_ssl / len(train_loader), ls/len(train_loader))) # type: ignore
+
+        # 更新学习率
+        node.ssl_scheduler.step()
+        # 打印当前学习率
+        current_lr = node.optm_cl.param_groups[0]['lr']
+        logger.info(f'Epoch {round*args.simclr_e+k}/{args.R*args.simclr_e}, Learning Rate: {current_lr}')
+
+    node.cl_model.eval()
+    # 训练完encoder之后
+    class_counts = torch.zeros(args.classes)
+    if args.dataset == 'rotatedmnist':
+        dim = 1024
+    else:
+        dim = 4096
+    prototypes = torch.zeros(args.classes, dim).to(args.device)
+    # train_dataset = SampleGenerator(2000, args.latent_space, [node.gen_model], 10, args.device)
+    # train_loader_syn = DataLoader(train_dataset, batch_size=128, shuffle=False)
+    # 遍历整个数据集
+    for images, labels in node.test_data:
+        images = images.to(node.device)
+        feature, embedd, out = node.cl_model(images.view(images.size(0), 1, 28, 28))
+        # feature = feature.cpu().detach()
+        for i in range(args.classes):  # 遍历每个类别
+            class_indices = (labels == i)  # 找到属于当前类别的样本的索引
+            class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
+            # class_outputs = embedd[class_indices]  # 提取属于当前类别的样本的特征向量
+            prototypes[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
+            class_counts[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
+
+    # 计算每个类别的平均特征向量
+    for i in range(args.classes):
+        if class_counts[i] > 0:
+            prototypes[i] /= class_counts[i]
+    # L2 归一化
+    prototypes = F.normalize(prototypes, p=2, dim=1)
+
+    # logger.info(f"Prototypes computed successfully! {node.prototypes}")
+    node.prototypes = prototypes
+
+def train_ssl1(node, args, logger, round, sw=None):
+    node.cl_model.to(node.device)
+    node.cl_model.train()
+    train_loader = node.train_data
+    # 训练编码器
+    for k in trange(args.simclr_e):
+        running_loss_ce_t = 0.0
+        for iter_, (real_images, labels) in enumerate(train_loader):
+            real_images = real_images.to(node.device)
+            labels = labels.to(node.device)
+            node.optm_cl.zero_grad()
+        
+            feature1, embeddings_orig, out_r = node.cl_model(real_images)
+            
+            loss_ce_true = CE_Loss(out_r, labels)  # 使用logits计算交叉熵损失
+            running_loss_ce_t += loss_ce_true.item()
+
+            loss_ce_true.backward()
+            node.optm_cl.step()
+
+        sw.add_scalar(f'Train-ssl/ce_t_loss/{node.num}', running_loss_ce_t / len(train_loader), round*args.simclr_e+k) # type: ignore
+        logger.info('Epoch [%d/%d], node %d: Loss_ce_t: %.4f' % (k+1, args.simclr_e, node.num, running_loss_ce_t / len(train_loader))) # type: ignore
 
         # 更新学习率
         node.ssl_scheduler.step()
@@ -756,7 +817,7 @@ def train_fc(node, args, logger, round, sw=None):
         loss_ce = 0
         for images, labels in train_loader:
             node.optm_fc.zero_grad()
-            images = images.to(node.device).detach()
+            images = images.to(node.device)
             labels = labels.to(node.device)
             # z_ = torch.randn(images.size(0), args.latent_space).to(node.device)
             # y_ = torch.eye(node.args.classes)[labels].to(node.device)  # 将类别转换为one-hot编码
