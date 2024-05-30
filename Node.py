@@ -74,7 +74,7 @@ class Node(object):
         # self.gen_model = Model.Generator1(args.classes, flatten_dim).to(self.device)
         self.gen_model = Model.Generator(args.latent_space, args.classes, flatten_dim).to(self.device)
         self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=args.gen_lr, weight_decay=5e-4)
-        if args.method == 'simclr' or args.method == 'ccsa':
+        if args.method == 'simclr' or args.method == 'ccsa' or args.method == 'ssl' or args.method == 'infonce':
             self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
         elif args.method == 'simsiam':
             self.cl_model = SimSiam(in_channel).to(self.device)
@@ -175,7 +175,7 @@ class Global_Node(object):
         # 归一化
         # acc_list_norm = [float(acc) / sum(acc_list) for acc in acc_list]
 
-        # weights_zero(self.gen_model)
+        weights_zero(self.gen_model)
         # FedAvg，每个node的meme和global model的结构一样
         Node_State_List_ = [copy.deepcopy(Node_List[i].gen_model.state_dict()) for i in range(len(Node_List))]
         dict_ = self.gen_model.state_dict()
@@ -206,7 +206,7 @@ class Global_Node(object):
         '''
     def merge_weights_ssl(self, Node_List, acc_list):
         # acc_list_norm = [float(acc) / sum(acc_list) for acc in acc_list]
-        # weights_zero(self.model)
+        weights_zero(self.model)
         # FedAvg，每个node的meme和global model的结构一样
         Node_State_List = [copy.deepcopy(Node_List[i].cl_model.state_dict()) for i in range(len(Node_List))]
         dict_1 = self.model.state_dict()
@@ -227,7 +227,7 @@ class Global_Node(object):
         average_tensor = torch.mean(stacked_tensor, dim=0)
         print(average_tensor.shape)
         # L2 归一化
-        average_tensor = F.normalize(average_tensor, p=2, dim=1)
+        # average_tensor = F.normalize(average_tensor, p=2, dim=1)
         self.proto = average_tensor
         return average_tensor
 

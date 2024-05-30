@@ -79,10 +79,11 @@ for rounds in range(args.R):
             Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
 
         if args.algorithm == 'fed_adv':
-            train_ssl(Node_List[k], args, logger, rounds, summary_writer)
-            # train_classifier(Node_List[k], args, logger, rounds, summary_writer)
-            # recorder.validate(Node_List[k], summary_writer)
-            recorder.test_on_target(Node_List[k], summary_writer, rounds)
+            if rounds >= 1:
+                train_ssl(Node_List[k], args, logger, rounds, summary_writer)
+                # train_classifier(Node_List[k], args, logger, rounds, summary_writer)
+                # recorder.validate(Node_List[k], summary_writer)
+                recorder.test_on_target(Node_List[k], summary_writer, rounds)
             if rounds == args.R-1:
                 dimension_reduction(Node_List[k], Data, rounds)
         elif args.algorithm == 'fed_mutual':
@@ -98,10 +99,11 @@ for rounds in range(args.R):
         acc_list = []
         # for node in Node_List:
         #     acc_list.append(recorder.target_acc[str(node.num)][-1])
-        Global_node.merge_weights_gen(Node_List, acc_list)
-        for n_ in range(len(Node_List)):
-            Node_List[n_].local_fork_gen(Global_node)
-            train_fc(Node_List[n_], args, logger, rounds, summary_writer)
+
+        # Global_node.merge_weights_gen(Node_List, acc_list)
+        # for n_ in range(len(Node_List)):
+        #     Node_List[n_].local_fork_gen(Global_node)
+        #     train_fc(Node_List[n_], args, logger, rounds, summary_writer)
 
         proto = Global_node.aggregate(Node_List)
         Global_node.merge_weights_ssl(Node_List, acc_list)
@@ -119,6 +121,7 @@ for rounds in range(args.R):
     elif args.algorithm != 'fed_adv':
         if args.algorithm == 'fed_avg':
             Global_node.merge(Node_List)
+            recorder.server_test_on_target(Global_node, summary_writer, rounds)
         elif args.algorithm == 'fed_mutual':
             logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))
     # TODO 为fedavg写一个server test on target的函数

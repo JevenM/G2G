@@ -50,7 +50,7 @@ class KL_Loss(nn.Module):
 
 def Norm_(x, y):
     # print(x.shape, y.size())
-    temp = torch.norm(x - y, dim=-1, p=2)
+    temp = torch.norm(x - y, dim=1, p=2)
     # print(temp.shape)
     distances = temp.mean()
     # print(distances)
@@ -135,7 +135,10 @@ class Recorder(object):
     def validate(self, node, sw):
         self.counter += 1
         # node.clser.to(node.device).eval()
-        node.cl_model.to(node.device).eval()
+        if self.args.algorithm == 'fed_avg':
+            node.meme.to(node.device).eval()
+        else:
+            node.cl_model.to(node.device).eval()
         total_loss = 0.0
         correct = 0.0
         true_labels = []
@@ -146,14 +149,20 @@ class Recorder(object):
             for idx, (data, target) in enumerate(node.test_data):
                 data, target = data.to(node.device), target.to(node.device)
                 # output = node.clser(data)
-                output = node.cl_model(data)
+                if self.args.algorithm == 'fed_avg':
+                    output = node.meme(data)
+                else:
+                    output = node.cl_model(data)
                 if isinstance(output, tuple) and self.args.algorithm == 'fed_adv':
                     features, embed, outputs = output
-                    features = F.normalize(features, p=2, dim=1)
+                    # features = F.normalize(features, p=2, dim=1)
+                    embed = F.normalize(embed, p=2, dim=1)
                     if node.prototypes_global is None:
-                        pred = compute_distances(features, node.prototypes)
+                        # pred = compute_distances(features, node.prototypes)
+                        pred = compute_distances(embed, node.prototypes)
                     else:
-                        pred = compute_distances(features, node.prototypes_global)
+                        # pred = compute_distances(features, node.prototypes_global)
+                        pred = compute_distances(embed, node.prototypes_global)
                     # similarity_scores = torch.matmul(features, prototypes.t())  # 计算相似度(效果不如L2)
                     # _, pred = torch.max(similarity_scores, dim=1)  # 选择最相似的类别作为预测标签
                     _, outd = torch.max(outputs, dim=1)
@@ -226,14 +235,18 @@ class Recorder(object):
                     output = node.meme(data)
                 else:
                     output = node.cl_model(data)
-                features, _, outputs = output
-                features = F.normalize(features, p=2, dim=1)
+                features, embed, outputs = output
+                
                 true_labels.extend(target.cpu().numpy())
                 if self.args.algorithm == 'fed_adv':
+                    # features = F.normalize(features, p=2, dim=1)
+                    embed = F.normalize(embed, p=2, dim=1)
                     if node.prototypes_global is None:
-                        pred = compute_distances(features, node.prototypes)
+                        # pred = compute_distances(features, node.prototypes)
+                        pred = compute_distances(embed, node.prototypes)
                     else:
-                        pred = compute_distances(features, node.prototypes_global)
+                        # pred = compute_distances(features, node.prototypes_global)
+                        pred = compute_distances(embed, node.prototypes_global)
                     pred_labels.extend(pred.cpu().numpy())
                     
                     
@@ -261,19 +274,24 @@ class Recorder(object):
         out_labels = []
         # 测试编码器的准确率在目标域
         with torch.no_grad():
+            accuracy1 = 0
             for idx, (data, target) in enumerate(node.test_data):
                 data, target = data.to(node.device), target.to(node.device)
                 output = node.model(data)
                 feature, embed, outputs = output
-                feature = F.normalize(feature, p=2, dim=1)
-                pred = compute_distances(feature, node.proto)
+                if self.args.algorithm == 'fed_adv':
+                    # feature = F.normalize(feature, p=2, dim=1)
+                    embed = F.normalize(embed, p=2, dim=1)
+                    # pred = compute_distances(feature, node.proto)
+                    pred = compute_distances(embed, node.proto)
+                    pred_labels.extend(pred.cpu().numpy())
+
                 _, outd = torch.max(outputs, dim=1)
                 true_labels.extend(target.cpu().numpy())
-                pred_labels.extend(pred.cpu().numpy())
                 out_labels.extend(outd.cpu().numpy())
-
-            accuracy1 = accuracy_score(true_labels, pred_labels)
-            print(f's{node.num} on Target: pseudo Accuracy: {accuracy1}')
+            if self.args.algorithm == 'fed_adv':
+                accuracy1 = accuracy_score(true_labels, pred_labels)
+                print(f's{node.num} on Target: pseudo Accuracy: {accuracy1}')
             accuracy2 = accuracy_score(true_labels, out_labels)
             self.logger.info(f's{node.num} on Target: test Accuracy: {accuracy2}')
             acc = max(accuracy1, accuracy2) * 100

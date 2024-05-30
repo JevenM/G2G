@@ -496,14 +496,15 @@ class SimCLR(nn.Module):
                 nn.ReLU(),
                 nn.MaxPool2d(2), # 3X3x64
                 Flatten(),
+                nn.Linear(576, 1024)
             )
             self.projection_head = nn.Sequential(
                 nn.ReLU(),
-                nn.Linear(576, args.embedding_d)
+                nn.Linear(1024, args.embedding_d)
             )
             self.prediction = nn.Sequential(
                 nn.ReLU(),
-                # nn.Dropout(0.5),
+                nn.Dropout(0.5),
                 nn.Linear(args.embedding_d, args.classes)
             )
         else:
