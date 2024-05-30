@@ -155,14 +155,14 @@ class Recorder(object):
                     output = node.cl_model(data)
                 if isinstance(output, tuple) and self.args.algorithm == 'fed_adv':
                     features, embed, outputs = output
-                    # features = F.normalize(features, p=2, dim=1)
-                    embed = F.normalize(embed, p=2, dim=1)
+                    features = F.normalize(features, p=2, dim=1)
+                    # embed = F.normalize(embed, p=2, dim=1)
                     if node.prototypes_global is None:
-                        # pred = compute_distances(features, node.prototypes)
-                        pred = compute_distances(embed, node.prototypes)
+                        pred = compute_distances(features, node.prototypes)
+                        # pred = compute_distances(embed, node.prototypes)
                     else:
-                        # pred = compute_distances(features, node.prototypes_global)
-                        pred = compute_distances(embed, node.prototypes_global)
+                        pred = compute_distances(features, node.prototypes_global)
+                        # pred = compute_distances(embed, node.prototypes_global)
                     # similarity_scores = torch.matmul(features, prototypes.t())  # 计算相似度(效果不如L2)
                     # _, pred = torch.max(similarity_scores, dim=1)  # 选择最相似的类别作为预测标签
                     _, outd = torch.max(outputs, dim=1)
@@ -239,14 +239,14 @@ class Recorder(object):
                 
                 true_labels.extend(target.cpu().numpy())
                 if self.args.algorithm == 'fed_adv':
-                    # features = F.normalize(features, p=2, dim=1)
-                    embed = F.normalize(embed, p=2, dim=1)
+                    features = F.normalize(features, p=2, dim=1)
+                    # embed = F.normalize(embed, p=2, dim=1)
                     if node.prototypes_global is None:
-                        # pred = compute_distances(features, node.prototypes)
-                        pred = compute_distances(embed, node.prototypes)
+                        pred = compute_distances(features, node.prototypes)
+                        # pred = compute_distances(embed, node.prototypes)
                     else:
-                        # pred = compute_distances(features, node.prototypes_global)
-                        pred = compute_distances(embed, node.prototypes_global)
+                        pred = compute_distances(features, node.prototypes_global)
+                        # pred = compute_distances(embed, node.prototypes_global)
                     pred_labels.extend(pred.cpu().numpy())
                     
                     
@@ -280,10 +280,10 @@ class Recorder(object):
                 output = node.model(data)
                 feature, embed, outputs = output
                 if self.args.algorithm == 'fed_adv':
-                    # feature = F.normalize(feature, p=2, dim=1)
-                    embed = F.normalize(embed, p=2, dim=1)
-                    # pred = compute_distances(feature, node.proto)
-                    pred = compute_distances(embed, node.proto)
+                    feature = F.normalize(feature, p=2, dim=1)
+                    # embed = F.normalize(embed, p=2, dim=1)
+                    pred = compute_distances(feature, node.proto)
+                    # pred = compute_distances(embed, node.proto)
                     pred_labels.extend(pred.cpu().numpy())
 
                 _, outd = torch.max(outputs, dim=1)

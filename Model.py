@@ -462,7 +462,7 @@ class SimCLR(nn.Module):
     def __init__(self, args, in_channel):
         super(SimCLR, self).__init__()
         if args.dataset == 'rotatedmnist':
-            '''
+            self.encoder = nn.Sequential(
                 nn.Conv2d(in_channels=in_channel, out_channels=64, kernel_size=3, stride=1, padding=1),
                 nn.BatchNorm2d(64),
                 nn.ReLU(),
@@ -481,26 +481,27 @@ class SimCLR(nn.Module):
                 # nn.ReLU(),
                 # nn.Linear(1024, 120),
                 # nn.ReLU()
-                '''
-            self.encoder = nn.Sequential(
-                nn.Conv2d(in_channels=in_channel, out_channels=16, kernel_size=5, padding=2),
-                nn.BatchNorm2d(16),
-                nn.ReLU(),
-                nn.MaxPool2d(2), # 14x14x32
-                nn.Conv2d(in_channels=16, out_channels=32, kernel_size=5, padding=2),
-                nn.BatchNorm2d(32),
-                nn.ReLU(),
-                nn.MaxPool2d(2), # 7x7x64
-                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2),
-                nn.BatchNorm2d(64),
-                nn.ReLU(),
-                nn.MaxPool2d(2), # 3X3x64
-                Flatten(),
-                nn.Linear(576, 1024)
             )
+            # self.encoder = nn.Sequential(
+            #     nn.Conv2d(in_channels=in_channel, out_channels=16, kernel_size=5, padding=2),
+            #     nn.BatchNorm2d(16),
+            #     nn.ReLU(),
+            #     nn.MaxPool2d(2), # 14x14x32
+            #     nn.Conv2d(in_channels=16, out_channels=32, kernel_size=5, padding=2),
+            #     nn.BatchNorm2d(32),
+            #     nn.ReLU(),
+            #     nn.MaxPool2d(2), # 7x7x64
+            #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2),
+            #     nn.BatchNorm2d(64),
+            #     nn.ReLU(),
+            #     nn.MaxPool2d(2), # 3X3x64
+            #     Flatten(),
+            #     nn.Linear(576, 1024),
+            #     nn.ReLU()
+            # )
             self.projection_head = nn.Sequential(
                 nn.ReLU(),
-                nn.Linear(1024, args.embedding_d)
+                nn.Linear(1024, args.embedding_d),
             )
             self.prediction = nn.Sequential(
                 nn.ReLU(),
@@ -524,7 +525,7 @@ class SimCLR(nn.Module):
                 ("drop7", nn.Dropout())
             ]))
 
-        # self.initial_params()
+        self.initial_params()
 
     def initial_params(self):
         for layer in self.modules():

@@ -74,10 +74,11 @@ class Node(object):
         # self.gen_model = Model.Generator1(args.classes, flatten_dim).to(self.device)
         self.gen_model = Model.Generator(args.latent_space, args.classes, flatten_dim).to(self.device)
         self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=args.gen_lr, weight_decay=5e-4)
-        if args.method == 'simclr' or args.method == 'ccsa' or args.method == 'ssl' or args.method == 'infonce':
-            self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
-        elif args.method == 'simsiam':
+        
+        if args.method == 'simsiam':
             self.cl_model = SimSiam(in_channel).to(self.device)
+        else:
+            self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
         self.optm_cl = optim.SGD(self.cl_model.parameters(), lr=args.cl_lr, momentum=args.momentum, weight_decay=5e-4)
         self.optm_fc = optim.SGD(self.cl_model.prediction.parameters(), lr=args.cls_lr, weight_decay=5e-4)
         self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=100, gamma=0.99)
@@ -117,11 +118,11 @@ class Node(object):
     def local_fork_ssl(self, global_model):
         # print(f"global: {global_model.model.state_dict()}")
         # self.clser.load_state_dict(global_model.model.state_dict())
-        self.cl_model.load_state_dict(global_model.model.state_dict())
+        self.cl_model = copy.deepcopy(global_model.model)
 
     def local_fork_gen(self, global_model):
         # print(f"global: {global_model.model.state_dict()}")
-        self.gen_model.load_state_dict(global_model.gen_model.state_dict())
+        self.gen_model = copy.deepcopy(global_model.gen_model)
 
     def fork_proto(self, protos):
         self.prototypes_global = protos
@@ -139,10 +140,10 @@ class Global_Node(object):
             in_channel = 1
             self.gen_model = Model.Generator(args.latent_space, args.classes, 28*28).to(self.device)
             # self.gen_model = Model.Generator1(args.classes).to(self.device)
-            if args.method == 'simclr' or args.method == 'ccsa':
-                self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
-            elif args.method == 'simsiam':
+            if args.method == 'simsiam':
                 self.cl_model = SimSiam(in_channel).to(self.device)
+            else:
+                self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
             
             # self.model = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
             # self.optm_cls = optim.Adam(self.model.fc.parameters(), lr=args.cls_lr, weight_decay=5e-4)

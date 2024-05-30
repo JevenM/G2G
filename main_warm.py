@@ -77,13 +77,13 @@ for rounds in range(args.R):
 
         for epoch in range(args.E):
             Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
-
+            
         if args.algorithm == 'fed_adv':
             if rounds >= 1:
                 train_ssl(Node_List[k], args, logger, rounds, summary_writer)
                 # train_classifier(Node_List[k], args, logger, rounds, summary_writer)
-                # recorder.validate(Node_List[k], summary_writer)
-                recorder.test_on_target(Node_List[k], summary_writer, rounds)
+            recorder.validate(Node_List[k], summary_writer)
+            recorder.test_on_target(Node_List[k], summary_writer, rounds)
             if rounds == args.R-1:
                 dimension_reduction(Node_List[k], Data, rounds)
         elif args.algorithm == 'fed_mutual':
@@ -114,7 +114,7 @@ for rounds in range(args.R):
         for k_ in range(len(Node_List)):
             Node_List[k_].fork_proto(proto)
             Node_List[k_].local_fork_ssl(Global_node)
-            recorder.validate(Node_List[k_], summary_writer)
+            # recorder.validate(Node_List[k_], summary_writer)
             
         logger.info(f"iter: {args.iteration}, epoch: {rounds}")
 

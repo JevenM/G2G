@@ -195,7 +195,6 @@ def train_mutual(node,args,logger, round, sw, epo):
 
 
 class Trainer(object):
-
     def __init__(self, args, logger=None):
         if args.algorithm == 'fed_mutual':
             self.train = train_mutual
@@ -308,7 +307,7 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
             elif bs_t < batchsize:
                 fake_images = node.gen_model(z, y[:bs_t]).detach()
                 # fake_images = node.gen_model(target_image.view(bs_t, -1), y[:bs_t]).detach()
-                fake_labels_t = torch.zeros(bs_t, 1).to(node.device)
+                fake_labels_t = torch.zeros(bs_t, 1).to(node.device).detach()
             # print(z.shape)
             # print(y[:bs_t])
             fake_outputs_t = node.disc_model2(fake_images.to(node.device))
@@ -372,7 +371,7 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
     # 训练完encoder之后
     class_counts = torch.zeros(args.classes)
     if args.dataset == 'rotatedmnist':
-        dim = 128
+        dim = 1024
     else:
         dim = 4096
     
@@ -386,8 +385,8 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
         # feature = feature.cpu().detach()
         for i in range(args.classes):  # 遍历每个类别
             class_indices = (labels == i)  # 找到属于当前类别的样本的索引
-            # class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
-            class_outputs = embedd[class_indices]  # 提取属于当前类别的样本的特征向量
+            class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
+            # class_outputs = embedd[class_indices]  # 提取属于当前类别的样本的特征向量
             prototypes[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
             class_counts[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
 
@@ -460,7 +459,8 @@ def info_nce_loss(query, key, temperature=0.07):
 
 
 def train_ssl(node, args, logger, round, sw=None):
-    node.cl_model.to(node.device).train()
+    node.cl_model.to(node.device)
+    node.cl_model.train()
     train_loader = node.train_data
     # 训练编码器
     for k in trange(args.simclr_e):
@@ -472,6 +472,7 @@ def train_ssl(node, args, logger, round, sw=None):
             real_images = real_images.to(node.device)
             labels = labels.to(node.device)
             node.optm_cl.zero_grad()
+            
             z = torch.randn(batchsize, args.latent_space).to(node.device)
             # lab_ = torch.randint(0, 10, (batchsize,))
             num_same = batchsize // 2
@@ -505,19 +506,19 @@ def train_ssl(node, args, logger, round, sw=None):
             
 
             cc1 = torch.zeros(args.classes)
-            proto1 = torch.zeros(args.classes, 128).to(args.device)
+            proto1 = torch.zeros(args.classes, 1024).to(args.device)
             cc2 = torch.zeros(args.classes)
-            proto2 = torch.zeros(args.classes, 128).to(args.device)
+            proto2 = torch.zeros(args.classes, 1024).to(args.device)
             # 遍历z1对应的label
             for i in range(args.classes):  # 遍历每个类别
                 class_ind = (labels == i)  # 找到属于当前类别的样本的索引
-                # class_outputs = feature1[class_ind]  # 提取属于当前类别的样本的特征向量
-                class_outputs = embeddings_orig[class_ind]  # 提取属于当前类别的样本的特征向量
+                class_outputs = feature1[class_ind]  # 提取属于当前类别的样本的特征向量
+                # class_outputs = embeddings_orig[class_ind]  # 提取属于当前类别的样本的特征向量
                 proto1[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
                 cc1[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
                 class_ind2 = (lab_ == i)  # 找到属于当前类别的样本的索引
-                # class_outputs2 = feature2[class_ind2]  # 提取属于当前类别的样本的特征向量
-                class_outputs2 = embeddings_gen[class_ind2]  # 提取属于当前类别的样本的特征向量
+                class_outputs2 = feature2[class_ind2]  # 提取属于当前类别的样本的特征向量
+                # class_outputs2 = embeddings_gen[class_ind2]  # 提取属于当前类别的样本的特征向量
                 proto2[i] += torch.sum(class_outputs2, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
                 cc2[i] += class_outputs2.shape[0]  # 统计当前类别的样本数量
 
@@ -585,12 +586,12 @@ def train_ssl(node, args, logger, round, sw=None):
             elif args.method == 'infonce':
                 ls_ = info_nce_loss(proto2, node.prototypes_global.detach())
             running_loss_ssl += ls_.item()
-
+            
             loss_ce_true = CE_Loss(out_r, labels)  # 使用logits计算交叉熵损失
             running_loss_ce_t += loss_ce_true.item()
 
-            loss_ce_f = CE_Loss(out_f, lab_.to(node.device))
-            running_loss_ce_f += loss_ce_f.item()
+            # loss_ce_f = CE_Loss(out_f, lab_.to(node.device))
+            # running_loss_ce_f += loss_ce_f.item()
 
             # loss = ou_loss_f + loss_ce_f + loss_ce_true + ls_
             # loss = ou_loss_norm + ou_loss_norm1 + loss_ce_true + ls_
@@ -641,7 +642,7 @@ def train_ssl(node, args, logger, round, sw=None):
     # 训练完encoder之后
     class_counts = torch.zeros(args.classes)
     if args.dataset == 'rotatedmnist':
-        dim = 128
+        dim = 1024
     else:
         dim = 4096
     prototypes = torch.zeros(args.classes, dim).to(args.device)
@@ -654,8 +655,8 @@ def train_ssl(node, args, logger, round, sw=None):
         # feature = feature.cpu().detach()
         for i in range(args.classes):  # 遍历每个类别
             class_indices = (labels == i)  # 找到属于当前类别的样本的索引
-            # class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
-            class_outputs = embedd[class_indices]  # 提取属于当前类别的样本的特征向量
+            class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
+            # class_outputs = embedd[class_indices]  # 提取属于当前类别的样本的特征向量
             prototypes[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
             class_counts[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
 
