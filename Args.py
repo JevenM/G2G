@@ -44,6 +44,8 @@ def args_parser():
     parser.add_argument('--cl_lr', type=float, default=0.0002,
                         help='')
     
+    parser.add_argument('--ce_epochs', type=int, default=10,
+                        help='')
     parser.add_argument('--cls_epochs', type=int, default=150,
                         help='')
     parser.add_argument('--cls_lr', type=float, default=0.0001,

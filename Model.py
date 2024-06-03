@@ -522,6 +522,13 @@ class SimCLR(nn.Module):
                 ("relu7", nn.ReLU(inplace=True)),
                 ("drop7", nn.Dropout())
             ]))
+        # self.initial_params()
+
+    def initial_params(self):
+        for layer in self.modules():
+            if isinstance(layer,torch.nn.Linear):
+                init.xavier_uniform_(layer.weight,0.1)
+                layer.bias.data.zero_()
 
     def forward(self, x):
         feature = self.encoder(x)

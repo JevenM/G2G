@@ -3,7 +3,7 @@ from Node import Node, Global_Node
 from Args import args_parser
 from Data import Data
 from utils import LR_scheduler, Recorder, exp_details, Summary, dimension_reduction
-from Trainer import Trainer, train_classifier, train_fc, train_ssl, train_ssl1
+from Trainer import Trainer, train_ce, train_classifier, train_fc, train_ssl, train_ssl1
 from log import logger_config, set_random_seed
 from datetime import datetime
 import os
@@ -66,19 +66,28 @@ recorder = Recorder(args,logger)
 Summary(args, logger)
 # start
 Train = Trainer(args)
+
+start_time = datetime.now()
+
 for rounds in range(args.R):
     logger.info('===============The {:d}-th round==============='.format(rounds + 1))
     # if args.lr_scheduler == True:
     #     LR_scheduler(rounds, Node_List, args, logger=logger)
-    
+    is_continue = True
     for k in range(len(Node_List)):
         if args.algorithm != 'fed_adv': 
             Node_List[k].fork(Global_node)
+        
+            for epoch in range(args.E):
+                Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
 
-        for epoch in range(args.E):
-            Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
-            
-        if args.algorithm == 'fed_adv':
+        if args.algorithm == 'fed_adv' and rounds == 0:
+            train_ce(Node_List[k], args, logger, rounds, summary_writer)
+            is_continue = False
+        elif args.algorithm == 'fed_adv' and rounds <= 20:
+            for epoch in range(args.E):
+                Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
+        elif args.algorithm == 'fed_adv' and rounds > 20:
             train_ssl(Node_List[k], args, logger, rounds, summary_writer)
             # train_classifier(Node_List[k], args, logger, rounds, summary_writer)
             recorder.validate(Node_List[k], summary_writer)
@@ -94,38 +103,44 @@ for rounds in range(args.R):
             recorder.validate(Node_List[k], summary_writer)
             recorder.test_on_target(Node_List[k], summary_writer, rounds)
     
-    if args.algorithm == 'fed_adv':
+    if args.algorithm == 'fed_adv' and is_continue:
         acc_list = []
         # for node in Node_List:
         #     acc_list.append(recorder.target_acc[str(node.num)][-1])
-
-        # Global_node.merge_weights_gen(Node_List, acc_list)
-        # for n_ in range(len(Node_List)):
-        #     Node_List[n_].local_fork_gen(Global_node)
-        #     train_fc(Node_List[n_], args, logger, rounds, summary_writer)
-
-        proto = Global_node.aggregate(Node_List)
-        Global_node.merge_weights_ssl(Node_List, acc_list)
-        # TODO 在服务器上利用target数据进行simclr对比学习
-        # Global_node.train(rounds, logger, summary_writer)
-        
-        recorder.server_test_on_target(Global_node, summary_writer, rounds)
-        for k_ in range(len(Node_List)):
-            Node_List[k_].fork_proto(proto)
-            Node_List[k_].local_fork_ssl(Global_node)
-            # recorder.validate(Node_List[k_], summary_writer)
+        if rounds <= 20:
+            Global_node.merge_weights_gen(Node_List, acc_list)
+            for n_ in range(len(Node_List)):
+                Node_List[n_].local_fork_gen(Global_node)
+                # train_fc(Node_List[n_], args, logger, rounds, summary_writer)
+        if rounds > 20:
+            proto = Global_node.aggregate(Node_List)
+            Global_node.merge_weights_ssl(Node_List, acc_list)
+            # TODO 在服务器上利用target数据进行simclr对比学习
+            # Global_node.train(rounds, logger, summary_writer)
             
-        logger.info(f"iter: {args.iteration}, epoch: {rounds}")
-
-    elif args.algorithm != 'fed_adv':
-        if args.algorithm == 'fed_avg':
-            Global_node.merge(Node_List)
             recorder.server_test_on_target(Global_node, summary_writer, rounds)
-        elif args.algorithm == 'fed_mutual':
-            logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))
+            for k_ in range(len(Node_List)):
+                Node_List[k_].fork_proto(proto)
+                Node_List[k_].local_fork_ssl(Global_node)
+                # recorder.validate(Node_List[k_], summary_writer)
+                
+            logger.info(f"iter: {args.iteration}, epoch: {rounds}")
+
+    elif args.algorithm == 'fed_avg':
+        Global_node.merge(Node_List)
+        recorder.server_test_on_target(Global_node, summary_writer, rounds)
+    elif args.algorithm == 'fed_mutual':
+        logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))
     # TODO 为fedavg写一个server test on target的函数
-    if args.algorithm == 'fed_adv' and rounds == args.R-1:
+    if (args.algorithm == 'fed_adv' or args.algorithm == 'fed_avg') and rounds == args.R-1:
         dimension_reduction(Global_node, Data, rounds)
 recorder.finish()
+
+end_time = datetime.now()
+h_, remainder_ = divmod((end_time - start_time).seconds, 3600)
+m_, s_ = divmod(remainder_, 60)
+time_str_ = "Time %02d:%02d:%02d" % (h_, m_, s_)
+logger.info(f'\n Total Run {time_str_}')
+
 Summary(args, logger)
 logger.info(result_name)

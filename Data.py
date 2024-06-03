@@ -96,8 +96,14 @@ class MultipleEnvironmentMNIST(MultipleDomainDataset):
         if root is None:
             raise ValueError('Data directory not specified!')
 
-        original_dataset_tr = datasets.MNIST(root, train=True, download=False)
-        original_dataset_te = datasets.MNIST(root, train=False, download=False)
+        # 定义数据变换
+        transform = transforms.Compose([
+            # transforms.RandomRotation(degrees=(0, 90)),  # 随机旋转-30到30度
+            transforms.ToTensor(),  # 转换为张量
+            transforms.Normalize((0.1307,), (0.3081,))  # 归一化
+        ])
+        original_dataset_tr = datasets.MNIST(root, train=True, download=False, transform=transform)
+        original_dataset_te = datasets.MNIST(root, train=False, download=False, transform=transform)
 
         original_images = torch.cat((original_dataset_tr.data,
                                      original_dataset_te.data))

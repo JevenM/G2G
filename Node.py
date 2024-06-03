@@ -89,8 +89,8 @@ class Node(object):
         self.disc_model2 = Model.Discriminator2(flatten_dim).to(self.device)
         self.optm_disc2 = optim.Adam(self.disc_model2.parameters(), lr=args.disc_lr, weight_decay=5e-4)
 
-        self.clser = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
-        self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=args.cls_lr, weight_decay=5e-4)
+        # self.clser = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
+        # self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=args.cls_lr, weight_decay=5e-4)
         self.meme = init_model(self.args.global_model,args).to(self.device)
         self.meme_optimizer = init_optimizer(self.meme, self.args)
         if args.algorithm == 'fed_avg':
@@ -120,6 +120,8 @@ class Node(object):
         # self.clser.load_state_dict(global_model.model.state_dict())
         self.cl_model = copy.deepcopy(global_model.model)
         self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=self.args.cl_lr, weight_decay=5e-4)
+        self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=100, gamma=0.99)
+        self.optm_fc = optim.SGD(self.cl_model.prediction.parameters(), lr=self.args.cls_lr, weight_decay=5e-4)
 
     def local_fork_gen(self, global_model):
         # print(f"global: {global_model.model.state_dict()}")
@@ -143,13 +145,13 @@ class Global_Node(object):
             self.gen_model = Model.Generator(args.latent_space, args.classes, 28*28).to(self.device)
             # self.gen_model = Model.Generator1(args.classes).to(self.device)
             if args.method == 'simsiam':
-                self.cl_model = SimSiam(in_channel).to(self.device)
+                self.model = SimSiam(in_channel).to(self.device)
             else:
-                self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
+                self.model = Model.SimCLR(args, in_channel).to(self.device)
             
             # self.model = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
             # self.optm_cls = optim.Adam(self.model.fc.parameters(), lr=args.cls_lr, weight_decay=5e-4)
-            self.model = Model.SimCLR(args, in_channel).to(self.device)
+            # self.model = Model.SimCLR(args, in_channel).to(self.device)
             self.optm_ssl = optim.SGD(self.model.parameters(), lr=args.cls_lr, weight_decay=5e-4)
         else:
             in_channel = 3

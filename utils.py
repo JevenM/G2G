@@ -342,7 +342,7 @@ def dimension_reduction(node, Data, round):
     random.shuffle(marker_list)
     random.shuffle(palette)
     if node.num != 0:
-        model_trunc = create_feature_extractor(node.clser, return_nodes={'encoder': 'semantic_feature'})
+        model_trunc = create_feature_extractor(node.cl_model, return_nodes={'encoder': 'semantic_feature'})
         #1 源域
         data_loader = torch.utils.data.DataLoader(node.test_data.dataset, batch_size=1, shuffle=False)
         encoding_array = []
@@ -353,8 +353,9 @@ def dimension_reduction(node, Data, round):
             feature = model_trunc(images)['semantic_feature'].squeeze().flatten().detach().cpu().numpy() # 执行前向预测，得到 avgpool 层输出的语义特征
             encoding_array.append(feature)
         encoding_array = np.array(encoding_array)
-        # 保存为本地的 npy 文件
-        np.save(os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser源域{Data.client[node.num-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array)
+        if node.args.save_model:
+            # 保存为本地的 npy 文件
+            np.save(os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser源域{Data.client[node.num-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array)
 
         print(f"源域{Data.client[node.num-1]}, encoding_array.len = {len(encoding_array)}, labels_list_.len = {len(labels_list)}")
 
@@ -389,7 +390,7 @@ def dimension_reduction(node, Data, round):
         model_trunc = create_feature_extractor(node.model, return_nodes={'encoder': 'semantic_feature'})
         data_loader_t = torch.utils.data.DataLoader(node.test_data.dataset, batch_size=1, shuffle=False)
     else:
-        model_trunc = create_feature_extractor(node.clser, return_nodes={'encoder': 'semantic_feature'})
+        model_trunc = create_feature_extractor(node.cl_model, return_nodes={'encoder': 'semantic_feature'})
         #1 目标域
         data_loader_t = torch.utils.data.DataLoader(node.target_loader.dataset, batch_size=1, shuffle=False)
     encoding_array_ = []
@@ -404,8 +405,9 @@ def dimension_reduction(node, Data, round):
         feature = model_trunc(images)['semantic_feature'].squeeze().flatten().detach().cpu().numpy() # 执行前向预测，得到 avgpool 层输出的语义特征
         encoding_array_.append(feature)
     encoding_array_ = np.array(encoding_array_)
-    # 保存为本地的 npy 文件
-    np.save(os.path.join(node.args.save_path+'/save/', f'node{node.num}_{round}_clser目标域{Data.client[-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array_)
+    if node.args.save_model:
+        # 保存为本地的 npy 文件
+        np.save(os.path.join(node.args.save_path+'/save/', f'node{node.num}_{round}_clser目标域{Data.client[-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array_)
 
     print(f"目标域: {Data.client[-1]}, encoding_array_.len = {len(encoding_array_)}, labels_list_.len = {len(labels_list_)}")
 
