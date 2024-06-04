@@ -542,7 +542,7 @@ class Discriminator(nn.Module):
     def __init__(self, flat_img, num_classes):
         super(Discriminator, self).__init__()
         self.dis = nn.Sequential(
-            nn.Linear(flat_img+num_classes, 128),  # 输入特征数为784，输出为512
+            nn.Linear(flat_img+num_classes, 128),
             nn.BatchNorm1d(128),
             nn.LeakyReLU(0.2),  # 进行非线性映射
             nn.Linear(128, 64),  # 进行一个线性映射
@@ -572,6 +572,42 @@ class Discriminator2(nn.Module):
     def forward(self, x):
         x = self.dis(x)
         return x
+
+class DiscriminatorFeature(nn.Module):
+    def __init__(self, latent_space, num_classes):
+        super(DiscriminatorFeature, self).__init__()
+        self.dis = nn.Sequential(
+            nn.Linear(latent_space+num_classes, 128),
+            nn.BatchNorm1d(128),
+            nn.LeakyReLU(0.2),  # 进行非线性映射
+            nn.Linear(128, 64),  # 进行一个线性映射
+            nn.BatchNorm1d(64),
+            nn.LeakyReLU(0.2),
+            nn.Linear(64, 1)
+        )
+
+    def forward(self, x, y):
+        x = torch.cat((x, y), dim=1)
+        x = self.dis(x)
+        return x
+
+class DiscriminatorFeature2(nn.Module):
+    def __init__(self, latent_space):
+        super(DiscriminatorFeature2, self).__init__()
+        self.dis = nn.Sequential(
+            nn.Linear(latent_space, 512),  # 输入特征数为784，输出为512
+            nn.BatchNorm1d(512),
+            nn.LeakyReLU(0.2),  # 进行非线性映射
+            nn.Linear(512, 256),  # 进行一个线性映射
+            nn.BatchNorm1d(256),
+            nn.LeakyReLU(0.2),
+            nn.Linear(256, 1)
+        )
+
+    def forward(self, x):
+        x = self.dis(x)
+        return x
+
 
 class Classifier(torch.nn.Module):
     def __init__(self, args, simclr_model, num_class=5):
