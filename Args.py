@@ -50,7 +50,7 @@ def args_parser():
                         help='')
     parser.add_argument('--cls_lr', type=float, default=0.0001,
                         help='')
-    parser.add_argument('--embedding_d', type=int, default=128,
+    parser.add_argument('--embedding_d', type=int, default=512,
                         help='')
     parser.add_argument('--latent_space', type=int, default=64,
                         help='')

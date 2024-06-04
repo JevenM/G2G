@@ -61,7 +61,7 @@ class Data(object):
             if iteration == 3:
                 client=['LabelMe','Caltech101','VOC2007','SUN09']
             if client is not None:
-                self.train_loader, self.test_loader,self.target_loader, self.target_data = get_vlcs_loaders(args, client, logger)
+                self.train_loader, self.test_loader, self.target_loader, self.classes, self.class_to_idx = get_vlcs_loaders(args, client, logger)
                                                                
         if args.dataset == 'office-home':
             if iteration == 0:
@@ -157,6 +157,8 @@ class Loader_dataset(data.Dataset):
         self.dataset = datasets.ImageFolder(path, transform=tranforms)
         self.length = self.dataset.__len__()
         self.transform = tranforms
+        self.classes = self.dataset.classes
+        self.class_to_idx = self.dataset.class_to_idx
 
     def __len__(self):
         return self.length
@@ -274,9 +276,14 @@ def get_vlcs_loaders(args, client, logger):
     train_path, valid_path = {}, {}
     train_datas, train_loaders = {}, {}
     valid_datas, valid_loaders = {}, {}
+    classes_name = None
+    class_to_idx = None
     for i in range(3):
         train_path[i] = path_root + client[i] + '/train'
         train_datas[i] = Loader_dataset(path=train_path[i], tranforms=trans0)
+        if classes_name is None:
+            classes_name = train_datas[i].classes
+            class_to_idx = train_datas[i].class_to_idx
         train_loaders[i] = DataLoader(train_datas[i], args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
 
         valid_path[i] = path_root + client[i] + '/val'
@@ -287,7 +294,7 @@ def get_vlcs_loaders(args, client, logger):
     target_data = Loader_dataset(target_path, trans1)
     target_loader = DataLoader(target_data, args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
     # logger.info(f'client list: {client}')
-    return train_loaders, valid_loaders, target_loader, target_data.dataset
+    return train_loaders, valid_loaders, target_loader, classes_name, class_to_idx
 
 class Loader_dataset_pacs(data.Dataset):
     def __init__(self, path, tranforms):

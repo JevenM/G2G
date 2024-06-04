@@ -72,7 +72,8 @@ class Node(object):
             flatten_dim = 225*225*3
             in_channel = 3
         # self.gen_model = Model.Generator1(args.classes, flatten_dim).to(self.device)
-        self.gen_model = Model.Generator(args.latent_space, args.classes, flatten_dim).to(self.device)
+        # self.gen_model = Model.Generator(args.latent_space, args.classes, flatten_dim).to(self.device)
+        self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, 2*args.embedding_d).to(self.device)
         self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=args.gen_lr, weight_decay=5e-4)
         
         if args.method == 'simsiam':
@@ -81,12 +82,14 @@ class Node(object):
             self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
         self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=args.cl_lr, weight_decay=5e-4)
         self.optm_fc = optim.SGD(self.cl_model.prediction.parameters(), lr=args.cls_lr, weight_decay=5e-4)
-        self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=100, gamma=0.99)
+        self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=30, gamma=0.99)
         # 判断是否是真样本
-        self.disc_model = Model.Discriminator(flatten_dim, args.classes).to(self.device)
+        # self.disc_model = Model.Discriminator(flatten_dim, args.classes).to(self.device)
+        self.disc_model = Model.DiscriminatorFeature(2*args.embedding_d, args.classes).to(self.device)
         self.optm_disc = optim.Adam(self.disc_model.parameters(), lr=args.disc_lr, weight_decay=5e-4)
         # 判断是否是目标域
-        self.disc_model2 = Model.Discriminator2(flatten_dim).to(self.device)
+        # self.disc_model2 = Model.Discriminator2(flatten_dim).to(self.device)
+        self.disc_model2 = Model.DiscriminatorFeature2(2*args.embedding_d).to(self.device)
         self.optm_disc2 = optim.Adam(self.disc_model2.parameters(), lr=args.disc_lr, weight_decay=5e-4)
 
         # self.clser = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
@@ -142,7 +145,8 @@ class Global_Node(object):
         # self.synthesis_train_loader = None
         if args.dataset == 'rotatedmnist':
             in_channel = 1
-            self.gen_model = Model.Generator(args.latent_space, args.classes, 28*28).to(self.device)
+            # self.gen_model = Model.Generator(args.latent_space, args.classes, 28*28).to(self.device)
+            self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, 2*args.embedding_d).to(self.device)
             # self.gen_model = Model.Generator1(args.classes).to(self.device)
             if args.method == 'simsiam':
                 self.model = SimSiam(in_channel).to(self.device)

@@ -265,7 +265,8 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
             # 训练辨别器
             node.optm_disc.zero_grad()
             # real_outputs = discriminator(real_images.view(batchsize, -1))
-            real_outputs = node.disc_model(real_images.view(batchsize, -1), y)
+            f_r, _, _ = node.cl_model(real_images)
+            real_outputs = node.disc_model(f_r, y)
             loss_real = criterion_BCE(real_outputs, real_labels)
             real_scores = nn.Sigmoid()(real_outputs)  # 得到真实图片的判别值，输出的值越接近1越好
             # TODO Generator里面只用self.gen(x)的时候
@@ -274,7 +275,7 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
             # fake_images = node.gen_model(real_images.view(batchsize, -1), y).detach()
             fake_images = node.gen_model(z, y).detach()
             # print(fake_images[0])
-            fake_outputs = node.disc_model(fake_images.to(node.device), y)
+            fake_outputs = node.disc_model(fake_images, y)
             # fake_outputs = discriminator(fake_images.to(device))
             # print(fake_outputs)
             loss_fake = criterion_BCE(fake_outputs, fake_labels)
@@ -296,8 +297,8 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
             except StopIteration:
                 break
             true_labels_t = torch.ones(bs_t, 1).to(node.device)
-            
-            tar_outputs = node.disc_model2(target_image.view(bs_t, -1))
+            f_t, _, _ = node.cl_model(target_image)
+            tar_outputs = node.disc_model2(f_t)
             loss_real_t = criterion_BCE(tar_outputs, true_labels_t)
             z = torch.randn(bs_t, args.latent_space).to(node.device)
             if bs_t >= batchsize:
@@ -310,7 +311,8 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
                 fake_labels_t = torch.zeros(bs_t, 1).to(node.device).detach()
             # print(z.shape)
             # print(y[:bs_t])
-            fake_outputs_t = node.disc_model2(fake_images.to(node.device))
+            
+            fake_outputs_t = node.disc_model2(fake_images)
             loss_fake_t = criterion_BCE(fake_outputs_t, fake_labels_t)
             loss_disc2 = loss_real_t + loss_fake_t
             loss_disc2.backward()
@@ -327,7 +329,8 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
             loss_gen = criterion_BCE(gen_outputs, real_labels)
             gen_outputs1 = node.disc_model2(gen_images)
             loss_gen1 = criterion_BCE(gen_outputs1, real_labels)
-            _,_,out = node.cl_model(gen_images.view(gen_images.size(0), 1, 28, 28))
+            # _,_,out = node.cl_model(gen_images.view(gen_images.size(0), 1, 28, 28))
+            out = node.cl_model.classifier(gen_images)
             loss_cls = CE_Loss(out, labels_cuda)
             # loss_gen = loss_gen + loss
             # loss_gen = torch.log(1.0 - (discriminator(gen_images)).detach()) 
@@ -348,9 +351,9 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
             real_images = to_img(real_images.cuda().data, args.dataset)
             save_image(real_images, os.path.join(args.save_path+"/gen_images/", '{}_real_images.png'.format(str(node.num))))
             # save_img(real_images, os.path.join(args.save_path+"/gen_images/", '_real_images.png'), batchsize)
-        if iter_==len(train_loader)-1:
-            fake_images = to_img(fake_images.cuda().data, args.dataset)
-            save_image(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)))
+        # if iter_==len(train_loader)-1:
+        #     fake_images = to_img(fake_images.cuda().data, args.dataset)
+        #     save_image(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)))
             # save_img(fake_images, os.path.join(args.save_path+"/gen_images/", '{}_fake_images-{}.png'.format(str(node.num), round + 1)), batchsize)
     sw.add_scalar(f'Train-adv/d_loss/{node.num}', d_loss/len(train_loader), round*args.E+epo) # type: ignore
     sw.add_scalar(f'Train-adv/d_loss1/{node.num}', d_loss_1/len(train_loader), round*args.E+epo) # type: ignore
@@ -372,15 +375,15 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
     # 训练完encoder之后
     class_counts = torch.zeros(args.classes)
     if args.dataset == 'rotatedmnist':
-        dim = 1024
+        dim = 2*args.embedding_d
     else:
-        dim = 4096
+        dim = args.hidden_size
     with torch.no_grad():
         prototypes = torch.zeros(args.classes, dim).to(args.device)
         # train_dataset = SampleGenerator(2000, args.latent_space, [node.gen_model], 10, args.device)
         # train_loader_syn = DataLoader(train_dataset, batch_size=128, shuffle=False)
         # 遍历整个数据集
-        for images, labels in node.test_data:
+        for images, labels in node.train_data:
             images = images.to(node.device)
             feature, embedd, out = node.cl_model(images)
             # feature = feature.cpu().detach()
@@ -467,7 +470,7 @@ def train_ssl(node, args, logger, round, sw=None):
     for k in trange(args.simclr_e):
         ls = 0
         running_loss_ce_t, running_ls_norm, running_ls_norm1, running_loss_ssl, running_loss_ce_f = 0.0, 0.0, 0.0, 0.0, 0.0
-        loss = 0
+        running_loss_ssl2, loss = 0.0, 0.0
         for iter_, (real_images, labels) in enumerate(train_loader):
             batchsize = real_images.size(0)
             real_images = real_images.to(node.device)
@@ -489,7 +492,7 @@ def train_ssl(node, args, logger, round, sw=None):
             y = torch.eye(args.classes)[lab_].to(node.device)
             # print(lab_[:10])
             # y = torch.eye(args.classes)[labels].to(node.device)  # 将类别转换为one-hot编码
-            fake_images = node.gen_model(z, y).detach()
+            fake_images_f = node.gen_model(z, y).detach()
             # fake_images = node.gen_model(real_images.view(batchsize, -1), y).detach()
             # fake_images = gen(z)
             # print(real_images.size())
@@ -502,14 +505,14 @@ def train_ssl(node, args, logger, round, sw=None):
                 w_h = 255
                 in_c = 3
             feature1, embeddings_orig, out_r = node.cl_model(real_images)
-            feature2, embeddings_gen, out_f = node.cl_model(fake_images.view(batchsize, in_c, w_h, w_h))
+            # feature2, embeddings_gen, out_f = node.cl_model(fake_images.view(batchsize, in_c, w_h, w_h))
             ls_,ou_loss_norm = 0.0, 0.0
             ou_loss_norm1  =0.0
             if round >= 0:#args.R / 2:
                 cc1 = torch.zeros(args.classes)
-                proto1 = torch.zeros(args.classes, 1024).to(args.device)
+                proto1 = torch.zeros(args.classes, 2*args.embedding_d).to(args.device)
                 cc2 = torch.zeros(args.classes)
-                proto2 = torch.zeros(args.classes, 1024).to(args.device)
+                proto2 = torch.zeros(args.classes, 2*args.embedding_d).to(args.device)
                 # 遍历z1对应的label
                 for i in range(args.classes):  # 遍历每个类别
                     class_ind = (labels == i)  # 找到属于当前类别的样本的索引
@@ -518,7 +521,7 @@ def train_ssl(node, args, logger, round, sw=None):
                     proto1[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
                     cc1[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
                     class_ind2 = (lab_ == i)  # 找到属于当前类别的样本的索引
-                    class_outputs2 = feature2[class_ind2]  # 提取属于当前类别的样本的特征向量
+                    class_outputs2 = fake_images_f[class_ind2]  # 提取属于当前类别的样本的特征向量
                     # class_outputs2 = embeddings_gen[class_ind2]  # 提取属于当前类别的样本的特征向量
                     proto2[i] += torch.sum(class_outputs2, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
                     cc2[i] += class_outputs2.shape[0]  # 统计当前类别的样本数量
@@ -562,17 +565,17 @@ def train_ssl(node, args, logger, round, sw=None):
                 running_ls_norm += ou_loss_norm.item()
                 running_ls_norm1 += ou_loss_norm1.item()
 
-                if args.method == 'simclr':
-                    ls_ = NT_XentLoss(embeddings_orig, embeddings_gen)
-                elif args.method == 'simsiam':
-                    ls_ = D(embeddings_orig, feature2) / 2 + D(embeddings_gen, feature1) / 2
-                elif args.method == 'ccsa':
-                    lab_ = lab_.to(node.device)
-                    ls_ = csa_loss(embeddings_orig, embeddings_gen, (labels == lab_).float(), args.device)
-                elif args.method == 'ssl':
+                # if args.method == 'simclr':
+                #     ls_ = NT_XentLoss(embeddings_orig, embeddings_gen)
+                # elif args.method == 'simsiam':
+                #     ls_ = D(embeddings_orig, feature2) / 2 + D(embeddings_gen, feature1) / 2
+                # elif args.method == 'ccsa':
+                #     lab_ = lab_.to(node.device)
+                #     ls_ = csa_loss(embeddings_orig, embeddings_gen, (labels == lab_).float(), args.device)
+                if args.method == 'ssl':
                     lab_ = lab_.to(node.device)
                     # 1. 将张量 A 中的每一行重复 10 次，得到 A'
-                    A_prime = proto2.repeat_interleave(args.classes, dim=0)
+                    A_prime = proto1.repeat_interleave(args.classes, dim=0)
                     if node.prototypes_global is None:
                         B_prime = node.prototypes.repeat(args.classes, 1)
                     else:
@@ -595,16 +598,18 @@ def train_ssl(node, args, logger, round, sw=None):
                 else:
                     ls_2 = info_nce_loss(proto1, node.prototypes_global.detach())
                 running_loss_ssl += ls_.item()
+                running_loss_ssl2 += ls_2.item()
             
             loss_ce_true = CE_Loss(out_r, labels)  # 使用logits计算交叉熵损失
             running_loss_ce_t += loss_ce_true.item()
 
-            loss_ce_f = CE_Loss(out_f, lab_.to(node.device))
-            running_loss_ce_f += loss_ce_f.item()
+            # loss_ce_f = CE_Loss(out_f, lab_.to(node.device))
+            # running_loss_ce_f += loss_ce_f.item()
 
             # loss = ou_loss_f + loss_ce_f + loss_ce_true + ls_
             # loss = ou_loss_norm + ou_loss_norm1 + loss_ce_true + ls_
-            loss = loss_ce_true + loss_ce_f + ou_loss_norm + ou_loss_norm1 + ls_ + ls_2
+            # loss = loss_ce_true + loss_ce_f + ou_loss_norm + ou_loss_norm1 + ls_ + ls_2
+            loss = 5*loss_ce_true + ou_loss_norm + ls_ + ls_2
         
             loss.backward()
             node.optm_cl.step()
@@ -614,8 +619,9 @@ def train_ssl(node, args, logger, round, sw=None):
         sw.add_scalar(f'Train-ssl/sim_loss1/{node.num}', running_ls_norm1 / len(train_loader), round*args.simclr_e+k) # type: ignore
         sw.add_scalar(f'Train-ssl/ce_f_loss/{node.num}', running_loss_ce_f / len(train_loader), round*args.simclr_e+k) # type: ignore
         sw.add_scalar(f'Train-ssl/ssl_ls/{node.num}', running_loss_ssl / len(train_loader), round*args.simclr_e+k) # type: ignore
+        sw.add_scalar(f'Train-ssl/ssl2_ls/{node.num}', running_loss_ssl2 / len(train_loader), round*args.simclr_e+k) # type: ignore
         sw.add_scalar(f'Train-ssl/loss/{node.num}', ls / len(train_loader), round*args.simclr_e+k) # type: ignore
-        logger.info('Epoch [%d/%d], node %d: Loss_ce_t: %.4f, Loss_sim: %.4f, Loss_sim1: %.4f, Loss_ce_f: %.4f, Loss_ssl: %.4f, total loss: %.4f' % (k+1, args.simclr_e, node.num, running_loss_ce_t / len(train_loader), running_ls_norm / len(train_loader), running_ls_norm1 / len(train_loader), running_loss_ce_f / len(train_loader), running_loss_ssl / len(train_loader), ls/len(train_loader))) # type: ignore
+        logger.info('Epoch [%d/%d], node %d: Loss_ce_t: %.4f, Loss_sim: %.4f, Loss_sim1: %.4f, Loss_ce_f: %.4f, Loss_ssl: %.4f, Loss_ssl: %.4f, total loss: %.4f' % (k+1, args.simclr_e, node.num, running_loss_ce_t / len(train_loader), running_ls_norm / len(train_loader), running_ls_norm1 / len(train_loader), running_loss_ce_f / len(train_loader), running_loss_ssl / len(train_loader), running_loss_ssl2 / len(train_loader), ls/len(train_loader))) # type: ignore
 
         # 更新学习率
         node.ssl_scheduler.step()
@@ -627,15 +633,15 @@ def train_ssl(node, args, logger, round, sw=None):
     # 训练完encoder之后
     class_counts = torch.zeros(args.classes)
     if args.dataset == 'rotatedmnist':
-        dim = 1024
+        dim = 2*args.embedding_d
     else:
-        dim = 4096
+        dim = args.hidden_size
     with torch.no_grad():
         prototypes = torch.zeros(args.classes, dim).to(args.device)
         # train_dataset = SampleGenerator(2000, args.latent_space, [node.gen_model], 10, args.device)
         # train_loader_syn = DataLoader(train_dataset, batch_size=128, shuffle=False)
         # 遍历整个数据集
-        for images, labels in node.test_data:
+        for images, labels in node.train_data:
             images = images.to(node.device)
             feature, embedd, out = node.cl_model(images)
             # feature = feature.cpu().detach()
@@ -679,9 +685,9 @@ def train_ce(node, args, logger, round, sw=None):
     node.cl_model.eval()
     class_counts = torch.zeros(args.classes)
     if args.dataset == 'rotatedmnist':
-        dim = 1024
+        dim = 2*args.embedding_d
     else:
-        dim = 4096
+        dim = args.hidden_size
     prototypes = torch.zeros(args.classes, dim).to(args.device)
     for images, labels in node.test_data:
         images = images.to(node.device)
@@ -736,9 +742,9 @@ def train_ssl1(node, args, logger, round, sw=None):
     # 训练完encoder之后
     class_counts = torch.zeros(args.classes)
     if args.dataset == 'rotatedmnist':
-        dim = 1024
+        dim = 2*args.embedding_d
     else:
-        dim = 4096
+        dim = args.hidden_size
     prototypes = torch.zeros(args.classes, dim).to(args.device)
     # train_dataset = SampleGenerator(2000, args.latent_space, [node.gen_model], 10, args.device)
     # train_loader_syn = DataLoader(train_dataset, batch_size=128, shuffle=False)
@@ -781,8 +787,8 @@ def train_classifier(node, args, logger, round, sw=None):
             # fake_imgs = node.gen_model(images.view(images.size(0), -1), y_).detach()
             
             # fake_imgs = gen(z_)
-            features_f, embed_f, outputs_f = node.cl_model(fake_imgs.view(images.size(0), 1, 28, 28))
-            features_f = F.normalize(features_f, p=2, dim=1)
+            # features_f, embed_f, outputs_f = node.cl_model(fake_imgs.view(images.size(0), 1, 28, 28))
+            features_f = F.normalize(fake_imgs, p=2, dim=1)
             if node.prototypes_global is None:
                 node.prototypes = node.prototypes.detach()
                 # pseudo_labels_f = compute_distances(features_f, node.prototypes)

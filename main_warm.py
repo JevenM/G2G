@@ -70,7 +70,7 @@ Train = Trainer(args)
 start_time = datetime.now()
 
 for rounds in range(args.R):
-    logger.info('===============The {:d}-th round==============='.format(rounds + 1))
+    logger.info('===============The {:d}-th round==============='.format(rounds))
     # if args.lr_scheduler == True:
     #     LR_scheduler(rounds, Node_List, args, logger=logger)
     is_continue = True
@@ -84,10 +84,10 @@ for rounds in range(args.R):
         if args.algorithm == 'fed_adv' and rounds == 0:
             train_ce(Node_List[k], args, logger, rounds, summary_writer)
             is_continue = False
-        elif args.algorithm == 'fed_adv' and rounds <= 20:
+        elif args.algorithm == 'fed_adv'and rounds <= 30:
             for epoch in range(args.E):
                 Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
-        elif args.algorithm == 'fed_adv' and rounds > 20:
+        elif args.algorithm == 'fed_adv' and rounds > 30:
             train_ssl(Node_List[k], args, logger, rounds, summary_writer)
             # train_classifier(Node_List[k], args, logger, rounds, summary_writer)
             recorder.validate(Node_List[k], summary_writer)
@@ -107,12 +107,12 @@ for rounds in range(args.R):
         acc_list = []
         # for node in Node_List:
         #     acc_list.append(recorder.target_acc[str(node.num)][-1])
-        if rounds <= 20:
+        if rounds <= 30:
             Global_node.merge_weights_gen(Node_List, acc_list)
             for n_ in range(len(Node_List)):
                 Node_List[n_].local_fork_gen(Global_node)
                 # train_fc(Node_List[n_], args, logger, rounds, summary_writer)
-        if rounds > 20:
+        if rounds > 30:
             proto = Global_node.aggregate(Node_List)
             Global_node.merge_weights_ssl(Node_List, acc_list)
             # TODO 在服务器上利用target数据进行simclr对比学习

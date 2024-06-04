@@ -217,8 +217,34 @@ class AlexNet(nn.Module):
 #     return alexnet
 
 
+class AlexNetFeature(nn.Module):
+    def __init__(self,args):
+        super(AlexNetFeature, self).__init__()
+        self.alexnet_fetExtrac = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec, args.hidden_size)
+        state_dict = torch.load("models/alexnet_caffe.pth.tar")
+
+        del state_dict["classifier.6.weight"]
+        del state_dict["classifier.6.bias"]
+        self.alexnet_fetExtrac.load_state_dict(state_dict)
+        # alexnet__classifier = task_classifier(args.hidden_size, optim.SGD, args.lr0, args.momentum, args.weight_dec,
+        #                                         class_num=args.classes)
+        
+        self.task_classifier = nn.Sequential()
+        self.task_classifier.add_module('t1_fc1', nn.Linear(args.hidden_size, args.hidden_size//4))
+        self.task_classifier.add_module("t1_rlue1", nn.ReLU())
+        self.task_classifier.add_module('t1_fc2', nn.Linear(args.hidden_size//4, args.classes))
+
+        # self.net = nn.Sequential(alexnet_fetExtrac,alexnet__classifier)
+        
+    def forward(self, x):
+        f = self.alexnet_fetExtrac(x)
+        x = self.task_classifier(f)
+        # return self.net(x)
+        return f, x
+
+
 class feature_extractor(nn.Module):
-    def __init__(self, optimizer,lr,momentum,weight_decay, num_classes=5):
+    def __init__(self, optimizer,lr,momentum,weight_decay, num_classes=5,hidden_size=4096):
         super(feature_extractor,self).__init__()
         self.num_classes = num_classes
         self.features = nn.Sequential(OrderedDict([
@@ -248,7 +274,7 @@ class feature_extractor(nn.Module):
             ("relu6", nn.ReLU(inplace=True)),
             ("drop6", nn.Dropout()),
 
-            ("4", nn.Linear(4096, 4096)),
+            ("4", nn.Linear(4096, hidden_size)),
             ("relu7", nn.ReLU(inplace=True)),
             ("drop7", nn.Dropout())
         ]))
@@ -354,22 +380,25 @@ class Generator(nn.Module):
         out = self.gen(out)
         return out
 
-class Generator1(nn.Module):
-    def __init__(self, num_classes=10, flat_img=784):
-        super(Generator1, self).__init__()
+class GeneratorFeature(nn.Module):
+    def __init__(self, latent_space=10, num_classes=10, embedding_d=1024):
+        super(GeneratorFeature, self).__init__()
         self.gen = nn.Sequential(
-            nn.Linear(flat_img+num_classes, 32),
-            nn.LeakyReLU(0.2),
+            nn.Linear(latent_space+num_classes, 32),
+            nn.ReLU(),
             nn.Linear(32, 64),
             nn.BatchNorm1d(64),
-            nn.LeakyReLU(0.2),
+            nn.ReLU(),
             nn.Linear(64, 128),
             nn.BatchNorm1d(128),
-            nn.LeakyReLU(0.2),
+            nn.ReLU(),
             nn.Linear(128, 256),
             nn.BatchNorm1d(256),
-            nn.LeakyReLU(0.2),
-            nn.Linear(256, flat_img),
+            nn.ReLU(),
+            nn.Linear(256, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Linear(512, embedding_d),
             nn.Tanh()
         )
 
@@ -496,16 +525,17 @@ class SimCLR(nn.Module):
                 nn.ReLU(),
                 nn.MaxPool2d(2), # 3X3x64
                 Flatten(),
-                nn.Linear(576, 1024)
+                nn.Linear(576, 2*args.embedding_d)
             )
             self.projection_head = nn.Sequential(
                 nn.ReLU(),
-                nn.Linear(1024, args.embedding_d),
+                nn.Linear(2*args.embedding_d, args.embedding_d),
             )
             self.prediction = nn.Sequential(
                 nn.ReLU(),
                 nn.Linear(args.embedding_d, args.classes)
             )
+            self.classifier = nn.Sequential(self.projection_head,self.prediction)
         else:
             self.encoder = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec)
             state_dict = torch.load("models/alexnet_caffe.pth.tar")
@@ -595,13 +625,13 @@ class DiscriminatorFeature2(nn.Module):
     def __init__(self, latent_space):
         super(DiscriminatorFeature2, self).__init__()
         self.dis = nn.Sequential(
-            nn.Linear(latent_space, 512),  # 输入特征数为784，输出为512
+            nn.Linear(latent_space, latent_space//2),  # 输入特征数为784，输出为512
             nn.BatchNorm1d(512),
-            nn.LeakyReLU(0.2),  # 进行非线性映射
-            nn.Linear(512, 256),  # 进行一个线性映射
-            nn.BatchNorm1d(256),
-            nn.LeakyReLU(0.2),
-            nn.Linear(256, 1)
+            nn.ReLU(),
+            nn.Linear(latent_space//2, latent_space//4),  # 进行一个线性映射
+            nn.BatchNorm1d(latent_space//4),
+            nn.ReLU(),
+            nn.Linear(latent_space//4, 1)
         )
 
     def forward(self, x):
