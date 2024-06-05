@@ -84,16 +84,14 @@ for rounds in range(args.R):
         if args.algorithm == 'fed_adv' and rounds == 0:
             train_ce(Node_List[k], args, logger, rounds, summary_writer)
             is_continue = False
-        elif args.algorithm == 'fed_adv'and rounds <= 30:
+        elif args.algorithm == 'fed_adv'and rounds > 30:#<= 30:
             for epoch in range(args.E):
                 Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
-        elif args.algorithm == 'fed_adv' and rounds > 30:
+        if args.algorithm == 'fed_adv' and rounds > 0: #> 30:
             train_ssl(Node_List[k], args, logger, rounds, summary_writer)
             # train_classifier(Node_List[k], args, logger, rounds, summary_writer)
             recorder.validate(Node_List[k], summary_writer)
             recorder.test_on_target(Node_List[k], summary_writer, rounds)
-            if rounds == args.R-1:
-                dimension_reduction(Node_List[k], Data, rounds)
         elif args.algorithm == 'fed_mutual':
             recorder.printer(Node_List[k])
             Global_node.fork(Node_List[k])
@@ -102,17 +100,19 @@ for rounds in range(args.R):
         elif args.algorithm == 'fed_avg':
             recorder.validate(Node_List[k], summary_writer)
             recorder.test_on_target(Node_List[k], summary_writer, rounds)
+        if rounds == args.R-1:
+                dimension_reduction(Node_List[k], Data, rounds)
     
     if args.algorithm == 'fed_adv' and is_continue:
         acc_list = []
         # for node in Node_List:
         #     acc_list.append(recorder.target_acc[str(node.num)][-1])
-        if rounds <= 30:
+        if rounds >30:#<= 30:
             Global_node.merge_weights_gen(Node_List, acc_list)
             for n_ in range(len(Node_List)):
                 Node_List[n_].local_fork_gen(Global_node)
                 # train_fc(Node_List[n_], args, logger, rounds, summary_writer)
-        if rounds > 30:
+        if rounds > 0:# 30:
             proto = Global_node.aggregate(Node_List)
             Global_node.merge_weights_ssl(Node_List, acc_list)
             # TODO 在服务器上利用target数据进行simclr对比学习
@@ -132,7 +132,7 @@ for rounds in range(args.R):
     elif args.algorithm == 'fed_mutual':
         logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))
     # TODO 为fedavg写一个server test on target的函数
-    if (args.algorithm == 'fed_adv' or args.algorithm == 'fed_avg') and rounds == args.R-1:
+    if rounds == args.R-1:
         dimension_reduction(Global_node, Data, rounds)
 recorder.finish()
 

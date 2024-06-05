@@ -520,6 +520,7 @@ class SimCLR(nn.Module):
                 nn.BatchNorm2d(32),
                 nn.ReLU(),
                 nn.MaxPool2d(2), # 7x7x64
+                MixStyle(p=0.5, alpha=0.1),
                 nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2),
                 nn.BatchNorm2d(64),
                 nn.ReLU(),
@@ -552,7 +553,7 @@ class SimCLR(nn.Module):
                 ("relu7", nn.ReLU(inplace=True)),
                 ("drop7", nn.Dropout())
             ]))
-        # self.initial_params()
+        self.initial_params()
 
     def initial_params(self):
         for layer in self.modules():

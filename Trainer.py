@@ -50,6 +50,7 @@ def train_avg(node, args, logger, round, sw, epo):
     avg_loss = 0.0
     correct = 0.0
     acc = 0.0
+    cnt = 0
     description = "Node{:d}: loss={:.4f} acc={:.2f}%"
     with tqdm(train_loader) as epochs:
         for idx, (data, target) in enumerate(epochs):
@@ -60,11 +61,12 @@ def train_avg(node, args, logger, round, sw, epo):
             loss = CE_Loss(output, target)
             loss.backward()
             node.meme_optimizer.step()
-            total_loss += loss
-            avg_loss = total_loss / (idx + 1)
+            total_loss += loss.item()
+            cnt += 1
             pred = output.argmax(dim=1)
             correct += pred.eq(target.view_as(pred)).sum()
-            acc = correct / len(train_loader.dataset) * 100
+    avg_loss = total_loss / cnt
+    acc = correct / len(train_loader.dataset) * 100
     sw.add_scalar(f'Train-avg/avg_loss/{node.num}', avg_loss, round*args.E+epo) # type: ignore
     sw.add_scalar(f'Train-avg/acc/{node.num}', acc, round*args.E+epo) # type: ignore
     
@@ -96,8 +98,8 @@ def train_mutual(node,args,logger, round, sw, epo):
             node.meme_optimizer.zero_grad()
             epochs.set_description(description.format(node.num, avg_local_loss, acc_local, avg_meme_loss, acc_meme))
             data, target = data.to(node.device), target.to(node.device)
-            output_local = node.model(data)
-            output_meme = node.meme(data)
+            _,_,output_local = node.model(data)
+            _,_,output_meme = node.meme(data)
 
             # KL_Loss(input, target)
             kl_local = KL_Loss(LogSoftmax(output_local), Softmax(output_meme.detach()))    
@@ -575,7 +577,7 @@ def train_ssl(node, args, logger, round, sw=None):
                 if args.method == 'ssl':
                     lab_ = lab_.to(node.device)
                     # 1. 将张量 A 中的每一行重复 10 次，得到 A'
-                    A_prime = proto1.repeat_interleave(args.classes, dim=0)
+                    A_prime = proto2.repeat_interleave(args.classes, dim=0)
                     if node.prototypes_global is None:
                         B_prime = node.prototypes.repeat(args.classes, 1)
                     else:
@@ -594,9 +596,9 @@ def train_ssl(node, args, logger, round, sw=None):
                     # else:
                     #     ls_ = info_nce_loss(proto2, node.prototypes_global.detach())
                 if node.prototypes_global is None:
-                    ls_2 = info_nce_loss(proto1, node.prototypes.detach())
+                    ls_2 = info_nce_loss(proto2, node.prototypes.detach())
                 else:
-                    ls_2 = info_nce_loss(proto1, node.prototypes_global.detach())
+                    ls_2 = info_nce_loss(proto2, node.prototypes_global.detach())
                 running_loss_ssl += ls_.item()
                 running_loss_ssl2 += ls_2.item()
             
@@ -609,7 +611,7 @@ def train_ssl(node, args, logger, round, sw=None):
             # loss = ou_loss_f + loss_ce_f + loss_ce_true + ls_
             # loss = ou_loss_norm + ou_loss_norm1 + loss_ce_true + ls_
             # loss = loss_ce_true + loss_ce_f + ou_loss_norm + ou_loss_norm1 + ls_ + ls_2
-            loss = 5*loss_ce_true + ou_loss_norm + ls_ + ls_2
+            loss = 0.1*loss_ce_true + ou_loss_norm + ls_ + ls_2 + ou_loss_norm1
         
             loss.backward()
             node.optm_cl.step()
@@ -662,13 +664,52 @@ def train_ssl(node, args, logger, round, sw=None):
         # logger.info(f"Prototypes computed successfully! {node.prototypes}")
         node.prototypes = prototypes
 
+def evaluate_model(device, model, test_loader, logger):
+    model.eval()
+    
+    # 定义损失函数
+    criterion = nn.CrossEntropyLoss()
+    
+    total_loss = 0.0
+    total_correct = 0
+    total_samples = 0
+    
+    with torch.no_grad():
+        for inputs, labels in test_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            _,_,outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            total_loss += loss.item() * inputs.size(0)
+            
+            _, predicted = torch.max(outputs, 1)
+            total_correct += (predicted == labels).sum().item()
+            total_samples += labels.size(0)
+    
+    avg_loss = total_loss / total_samples
+    accuracy = total_correct / total_samples
+    
+    logger.info(f"Test Loss: {avg_loss}")
+    logger.info(f"Test Accuracy: {accuracy}")
+    return accuracy, avg_loss
+
 def train_ce(node, args, logger, round, sw=None):
     node.cl_model.to(node.device)
     node.cl_model.train()
     train_loader = node.train_data
 
+    class_counts = torch.zeros(args.classes)
+    if args.dataset == 'rotatedmnist':
+        dim = 2*args.embedding_d
+    else:
+        dim = args.hidden_size
+    prototypes = torch.zeros(args.classes, dim).to(args.device)
+
+    
     for k in trange(args.ce_epochs):
         running_loss_ce_t = 0.0
+        total_correct = 0
+        total_samples = 0
+        accuracy_train = 0
         for iter_, (real_images, labels) in enumerate(train_loader):
             real_images = real_images.to(node.device)
             labels = labels.to(node.device)
@@ -678,20 +719,26 @@ def train_ce(node, args, logger, round, sw=None):
             running_loss_ce_t += loss_ce_true.item()
             loss_ce_true.backward()
             node.optm_cl.step()
+            
+            _, predicted = torch.max(out_r, 1)
+            total_correct += (predicted == labels).sum().item()
+            total_samples += labels.size(0)
+
+        accuracy_train = total_correct / total_samples
 
         sw.add_scalar(f'Train-ce/loss/{node.num}', running_loss_ce_t / len(train_loader), round*args.ce_epochs+k) # type: ignore
         logger.info('Epoch [%d/%d], node %d: Loss_ce: %.4f' % (k+1, args.ce_epochs, node.num, running_loss_ce_t / len(train_loader))) # type: ignore
+        sw.add_scalar(f'Train-ce/acc/{node.num}', accuracy_train, round*args.ce_epochs+k) # type: ignore
+
+        acc_test, loss_test = evaluate_model(node.device, copy.deepcopy(node.cl_model), node.test_data, logger) # type: ignore
+        sw.add_scalar(f'Test-ce/acc/{node.num}', acc_test, round*args.ce_epochs+k) # type: ignore
+        sw.add_scalar(f'Test-ce/loss/{node.num}', loss_test, round*args.ce_epochs+k) # type: ignore
 
     node.cl_model.eval()
-    class_counts = torch.zeros(args.classes)
-    if args.dataset == 'rotatedmnist':
-        dim = 2*args.embedding_d
-    else:
-        dim = args.hidden_size
-    prototypes = torch.zeros(args.classes, dim).to(args.device)
+    
     for images, labels in node.test_data:
         images = images.to(node.device)
-        feature, embedd, out = node.cl_model(images)
+        feature, _, _ = node.cl_model(images)
         for i in range(args.classes):  # 遍历每个类别
             class_indices = (labels == i)  # 找到属于当前类别的样本的索引
             class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量

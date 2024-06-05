@@ -68,6 +68,8 @@ class Node(object):
         if args.dataset == 'rotatedmnist':
             flatten_dim = 28*28
             in_channel = 1
+            self.model = Model.SimCLR(args, in_channel).to(self.device)
+            self.optimizer = optim.Adam(self.model.parameters(), lr=args.cl_lr, weight_decay=5e-4)
         else:
             flatten_dim = 225*225*3
             in_channel = 3
@@ -96,7 +98,7 @@ class Node(object):
         # self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=args.cls_lr, weight_decay=5e-4)
         self.meme = init_model(self.args.global_model,args).to(self.device)
         self.meme_optimizer = init_optimizer(self.meme, self.args)
-        if args.algorithm == 'fed_avg':
+        if args.algorithm != 'fed_adv':
             self.meme = Model.SimCLR(args, in_channel).to(self.device)
             self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=args.cl_lr, weight_decay=5e-4)
             
@@ -116,7 +118,8 @@ class Node(object):
 
     def fork(self, global_node):
         self.meme = copy.deepcopy(global_node.model).to(self.device)
-        self.meme_optimizer = init_optimizer(self.meme, self.args)
+        # self.meme_optimizer = init_optimizer(self.meme, self.args)
+        self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=self.args.cl_lr, weight_decay=5e-4)
 
     def local_fork_ssl(self, global_model):
         # print(f"global: {global_model.model.state_dict()}")

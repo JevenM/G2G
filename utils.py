@@ -135,7 +135,7 @@ class Recorder(object):
     def validate(self, node, sw):
         self.counter += 1
         # node.clser.to(node.device).eval()
-        if self.args.algorithm == 'fed_avg':
+        if self.args.algorithm != 'fed_adv':
             node.meme.to(node.device).eval()
         else:
             node.cl_model.to(node.device).eval()
@@ -149,7 +149,7 @@ class Recorder(object):
             for idx, (data, target) in enumerate(node.test_data):
                 data, target = data.to(node.device), target.to(node.device)
                 # output = node.clser(data)
-                if self.args.algorithm == 'fed_avg':
+                if self.args.algorithm != 'fed_adv':
                     output = node.meme(data)
                 else:
                     output = node.cl_model(data)
@@ -218,7 +218,7 @@ class Recorder(object):
         #     acc = correct / len(node.test_data.dataset) * 100
     def test_on_target(self, node, sw, round):
         # node.clser.to(node.device).eval()
-        if self.args.algorithm == 'fed_avg':
+        if self.args.algorithm != 'fed_adv':
             node.meme.to(node.device).eval()
         else:
             node.cl_model.to(node.device).eval()
@@ -231,7 +231,7 @@ class Recorder(object):
             for idx, (data, target) in enumerate(node.target_loader):
                 data, target = data.to(node.device), target.to(node.device)
                 # output = node.clser(data)
-                if self.args.algorithm == 'fed_avg':
+                if self.args.algorithm != 'fed_adv':
                     output = node.meme(data)
                 else:
                     output = node.cl_model(data)
@@ -387,9 +387,11 @@ def dimension_reduction(node, Data, round):
             plt.savefig(dim_reduc_save_path, dpi=300, bbox_inches='tight') # 保存图像
 
     if node.num == 0:
+        node.model.eval()
         model_trunc = create_feature_extractor(node.model, return_nodes={'encoder': 'semantic_feature'})
         data_loader_t = torch.utils.data.DataLoader(node.test_data.dataset, batch_size=1, shuffle=False)
     else:
+        node.cl_model.eval()
         model_trunc = create_feature_extractor(node.cl_model, return_nodes={'encoder': 'semantic_feature'})
         #1 目标域
         data_loader_t = torch.utils.data.DataLoader(node.target_loader.dataset, batch_size=1, shuffle=False)
