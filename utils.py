@@ -115,6 +115,24 @@ class GradualWarmupScheduler(_LRScheduler):
         else:
             self.step_ReduceLROnPlateau(metrics, epoch)
 
+class AverageMeter(object):
+    def __init__(self):
+        self.reset()
+    def reset(self):
+        self.count = 0
+        self.sum = 0
+    def update(self,val,n=1):
+        self.count += n
+        self.sum += val*n
+    def average(self):
+        return self.sum/self.count
+    def __repr__(self):
+        r = self.sum/self.count
+        if r<1e-3:
+            return '{:.2e}'.format(r)
+        else:
+            return '%.4f'%(r)
+
 class Recorder(object):
     def __init__(self, args, logger):
         self.args = args
@@ -135,10 +153,19 @@ class Recorder(object):
     def validate(self, node, sw):
         self.counter += 1
         # node.clser.to(node.device).eval()
-        if self.args.algorithm != 'fed_adv':
-            node.meme.to(node.device).eval()
-        else:
+        if self.args.algorithm == 'fed_avg' or self.args.algorithm == 'fed_mutual':
+            if node.num != 0:
+                node.meme.to(node.device).eval()
+            else:
+                node.model.to(node.device).eval()
+        elif self.args.algorithm == 'fed_adv':
             node.cl_model.to(node.device).eval()
+        elif self.args.algorithm == 'fed_sr':
+            if node.num != 0:
+                node.cl_model.to(node.device).eval()
+            else:
+                node.model.to(node.device).eval()
+
         total_loss = 0.0
         correct = 0.0
         true_labels = []
@@ -149,10 +176,18 @@ class Recorder(object):
             for idx, (data, target) in enumerate(node.test_data):
                 data, target = data.to(node.device), target.to(node.device)
                 # output = node.clser(data)
-                if self.args.algorithm != 'fed_adv':
-                    output = node.meme(data)
-                else:
+                if self.args.algorithm == 'fed_avg' or self.args.algorithm == 'fed_mutual':
+                    if node.num != 0:
+                        output = node.meme(data)
+                    else:
+                        output = node.model(data)
+                elif self.args.algorithm == 'fed_adv':
                     output = node.cl_model(data)
+                elif self.args.algorithm == 'fed_sr':
+                    z = node.cl_model.featurize(data,num_samples=20)
+                    preds = torch.softmax(node.cl_model.cls(z),dim=1)
+                    preds = preds.view([20,-1,node.args.classes]).mean(0)
+                    output = torch.log(preds)
                 if isinstance(output, tuple) and self.args.algorithm == 'fed_adv':
                     features, embed, outputs = output
                     features = F.normalize(features, p=2, dim=1)
@@ -169,10 +204,14 @@ class Recorder(object):
                     true_labels.extend(target.cpu().numpy())
                     pred_labels.extend(pred.cpu().numpy())
                     out_labels.extend(outd.cpu().numpy())
-                else:
+                elif self.args.algorithm != 'fed_sr':
                     total_loss += torch.nn.CrossEntropyLoss()(output[2], target)
-                    pred = output[2].argmax(dim=1)
-                    correct += pred.eq(target.view_as(pred)).sum().item()
+                    p = output[2].argmax(dim=1)
+                    correct += p.eq(target.view_as(p)).sum().item()
+                else:
+                    total_loss += torch.nn.CrossEntropyLoss()(output, target)
+                    p = output.argmax(dim=1)
+                    correct += p.eq(target.view_as(p)).sum().item()
 
             if true_labels != []:
                 accuracy1 = accuracy_score(true_labels, pred_labels)
@@ -217,11 +256,14 @@ class Recorder(object):
         #     total_loss = total_loss / (idx + 1)
         #     acc = correct / len(node.test_data.dataset) * 100
     def test_on_target(self, node, sw, round):
-        # node.clser.to(node.device).eval()
-        if self.args.algorithm != 'fed_adv':
-            node.meme.to(node.device).eval()
-        else:
+        if self.args.algorithm == 'fed_avg' or self.args.algorithm == 'fed_mutual':
+            if node.num != 0:
+                node.meme.to(node.device).eval()
+            else:
+                node.model.to(node.device).eval()
+        elif self.args.algorithm == 'fed_adv' or self.args.algorithm == 'fed_sr':
             node.cl_model.to(node.device).eval()
+
         true_labels = []
         pred_labels = []
         out_labels = []
@@ -230,12 +272,21 @@ class Recorder(object):
             accuracy1 = 0
             for idx, (data, target) in enumerate(node.target_loader):
                 data, target = data.to(node.device), target.to(node.device)
-                # output = node.clser(data)
-                if self.args.algorithm != 'fed_adv':
-                    output = node.meme(data)
-                else:
+
+                if self.args.algorithm == 'fed_avg' or self.args.algorithm == 'fed_mutual':
+                    if node.num != 0:
+                        output = node.meme(data)
+                    else:
+                        output = node.model(data)
+                    features, embed, outputs = output
+                elif self.args.algorithm == 'fed_adv':
                     output = node.cl_model(data)
-                features, embed, outputs = output
+                    features, embed, outputs = output
+                elif self.args.algorithm == 'fed_sr':
+                    z = node.cl_model.featurize(data,num_samples=20)
+                    preds = torch.softmax(node.cl_model.cls(z),dim=1)
+                    preds = preds.view([20,-1,node.args.classes]).mean(0)
+                    outputs = torch.log(preds)
                 
                 true_labels.extend(target.cpu().numpy())
                 if self.args.algorithm == 'fed_adv':
@@ -268,6 +319,7 @@ class Recorder(object):
             sw.add_scalar(f'Test-target/{node.num}/true', accuracy2, round+1)
 
     def server_test_on_target(self, node, sw, round):
+        # node.num == 0
         node.model.to(node.device).eval()
         true_labels = []
         pred_labels = []
@@ -277,21 +329,35 @@ class Recorder(object):
             accuracy1 = 0
             for idx, (data, target) in enumerate(node.test_data):
                 data, target = data.to(node.device), target.to(node.device)
-                output = node.model(data)
-                feature, embed, outputs = output
-                if self.args.algorithm == 'fed_adv':
-                    feature = F.normalize(feature, p=2, dim=1)
-                    # embed = F.normalize(embed, p=2, dim=1)
-                    pred = compute_distances(feature, node.proto)
-                    # pred = compute_distances(embed, node.proto)
-                    pred_labels.extend(pred.cpu().numpy())
-
+                if self.args.algorithm != 'fed_sr':
+                    output = node.model(data)
+                    feature, embed, outputs = output
+                    if self.args.algorithm == 'fed_adv':
+                        feature = F.normalize(feature, p=2, dim=1)
+                        # embed = F.normalize(embed, p=2, dim=1)
+                        pred = compute_distances(feature, node.proto)
+                        # pred = compute_distances(embed, node.proto)
+                        pred_labels.extend(pred.cpu().numpy())
+                else:
+                    z = node.model.featurize(data,num_samples=20)
+                    # 1!!!!!!!!!!torch.Size([10240, 512])
+                    # self.logger.info(f"1!!!!!!!!!!{z.shape}")
+                    preds = torch.softmax(node.model.cls(z),dim=1)
+                    # 2!!!!!!!!!!torch.Size([10240, 10])
+                    # self.logger.info(f"2!!!!!!!!!!{preds.shape}")
+                    preds = preds.view([20,-1,node.args.classes]).mean(0)
+                    # 3!!!!!!!!!!torch.Size([512, 10])
+                    # self.logger.info(f"3!!!!!!!!!!{preds.shape}")
+                    outputs = torch.log(preds)
+                    # 4!!!!!!!!!!torch.Size([512, 10])
+                    # self.logger.info(f"4!!!!!!!!!!{outputs.shape}")
+                
                 _, outd = torch.max(outputs, dim=1)
                 true_labels.extend(target.cpu().numpy())
                 out_labels.extend(outd.cpu().numpy())
             if self.args.algorithm == 'fed_adv':
                 accuracy1 = accuracy_score(true_labels, pred_labels)
-                print(f's{node.num} on Target: pseudo Accuracy: {accuracy1}')
+                self.logger.info(f's{node.num} on Target: pseudo Accuracy: {accuracy1}')
             accuracy2 = accuracy_score(true_labels, out_labels)
             self.logger.info(f's{node.num} on Target: test Accuracy: {accuracy2}')
             acc = max(accuracy1, accuracy2) * 100

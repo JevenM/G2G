@@ -5,11 +5,12 @@ import torch
 from torchvision.utils import save_image
 from torchvision.models.feature_extraction import create_feature_extractor
 import os
+import torch.distributions as distributions
 import copy
 from torch.utils.data import Dataset, DataLoader
 from tqdm import trange
 from simsiam import D
-from utils import Norm_, to_img, compute_distances, save_img
+from utils import AverageMeter, Norm_, to_img, compute_distances, save_img
 import torch.nn.functional as F
 
 KL_Loss = nn.KLDivLoss(reduction='batchmean')
@@ -206,18 +207,14 @@ class Trainer(object):
             self.train = train_normal
         elif args.algorithm == 'fed_adv':
             self.train = train_adv
+        elif args.algorithm == 'fed_sr':
+            self.train = train_fedsr
 
     def __call__(self, node, args, logger, round=0, sw=None, epo=None):
         self.train(node, args, logger, round, sw, epo) # type: ignore
 
 # =========================================== my ==================================================
 
-# latent_space = 64
-# images_path = './images/'
-# temperature用beta代替
-# temperature=0.5
-# alpha用源代码中的alpha代替
-# alpha = 0.5
 
 # Simclr
 def NT_XentLoss(z1, z2, temperature=0.5):
@@ -242,6 +239,65 @@ def NT_XentLoss(z1, z2, temperature=0.5):
 
     loss = F.cross_entropy(logits, labels, reduction='sum')
     return loss / (2 * N)
+
+def train_fedsr(node, args, logger, round, sw = None, epo=None):
+    node.cl_model.train()
+    lossMeter = AverageMeter()
+    accMeter = AverageMeter()
+    regL2RMeter = AverageMeter()
+    regCMIMeter = AverageMeter()
+    regNegEntMeter = AverageMeter()
+
+    for _, (x, y) in enumerate(tqdm(node.train_data)):
+    # for step in range(node.args.E):
+        # x, y = next(iter(loader))
+        x, y = x.to(node.device), y.to(node.device)
+        z, (z_mu,z_sigma) = node.cl_model.featurize(x,return_dist=True)
+        logits = node.cl_model.cls(z)
+        loss = F.cross_entropy(logits,y)
+
+        obj = loss
+        regL2R = torch.zeros_like(obj)
+        regCMI = torch.zeros_like(obj)
+        regNegEnt = torch.zeros_like(obj)
+        
+        regL2R = z.norm(dim=1).mean()
+        obj = obj + 0.01*regL2R
+
+        r_sigma_softplus = F.softplus(node.r_sigma)
+        r_mu = node.r_mu[y]
+        r_sigma = r_sigma_softplus[y]
+        z_mu_scaled = z_mu*node.C
+        z_sigma_scaled = z_sigma*node.C
+        regCMI = torch.log(r_sigma) - torch.log(z_sigma_scaled) + \
+                (z_sigma_scaled**2+(z_mu_scaled-r_mu)**2)/(2*r_sigma**2) - 0.5
+        regCMI = regCMI.sum(1).mean()
+        obj = obj + 0.001*regCMI
+
+        z_dist = distributions.Independent(distributions.normal.Normal(z_mu,z_sigma),1)
+        mix_coeff = distributions.categorical.Categorical(x.new_ones(x.shape[0]))
+        mixture = distributions.mixture_same_family.MixtureSameFamily(mix_coeff,z_dist)
+        log_prob = mixture.log_prob(z)
+        regNegEnt = log_prob.mean()
+
+
+        node.optm_cl.zero_grad()
+        obj.backward()
+        node.optm_cl.step()
+
+        acc = (logits.argmax(1)==y).float().mean()
+        lossMeter.update(loss.data,x.shape[0])
+        accMeter.update(acc.data,x.shape[0])
+        regL2RMeter.update(regL2R.data,x.shape[0])
+        regCMIMeter.update(regCMI.data,x.shape[0])
+        regNegEntMeter.update(regNegEnt.data,x.shape[0])
+    sw.add_scalar(f'Train-sr/acc/{node.num}', accMeter.average(), round*args.E+epo) # type: ignore
+    sw.add_scalar(f'Train-sr/loss/{node.num}', lossMeter.average(), round*args.E+epo) # type: ignore
+    sw.add_scalar(f'Train-sr/l2r/{node.num}', regL2RMeter.average(), round*args.E+epo) # type: ignore
+    sw.add_scalar(f'Train-sr/cmi/{node.num}', regCMIMeter.average(), round*args.E+epo) # type: ignore
+    sw.add_scalar(f'Train-sr/neg/{node.num}', regNegEntMeter.average(), round*args.E+epo) # type: ignore
+    logger.info(f'train acc: {accMeter.average()}, loss: {lossMeter.average()}, regL2R: {regL2RMeter.average()}, regCMI: {regCMIMeter.average()}, regNegEnt: {regNegEntMeter.average()}')
+
 
 
 def train_adv(node, args, logger, round, sw = None, epo=None):

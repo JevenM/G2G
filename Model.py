@@ -8,7 +8,7 @@ from torch import optim
 import copy
 import random
 import torch
-
+import torch.distributions as distributions
 
 class LeNet5(nn.Module):
     def __init__(self):
@@ -460,7 +460,10 @@ class MixStyle(nn.Module):
         mu, sig = mu.detach(), sig.detach()
         x_normed = (x-mu) / sig
 
-        lmda = self.beta.sample((B, 1, 1, 1))
+        # TODO 这里在特征的时候总是报错  File "/home/mwj/anaconda3/lib/python3.10/site-packages/torch/distributions/distribution.py", line 267, in _extended_shape
+        # sample_shape = torch.Size(sample_shape)
+        # TypeError: torch.Size() takes an iterable of 'int' (item 0 is 'Proxy')
+        lmda = self.beta.sample(torch.Size((B, 1, 1, 1)))
         lmda = lmda.to(x.device)
 
         if self.mix == 'random':
@@ -485,49 +488,59 @@ class MixStyle(nn.Module):
         return x_normed*sig_mix + mu_mix
 
 
+class SqueezeLastTwo(nn.Module):
+    """A module which squeezes the last two dimensions, ordinary squeeze can be a problem for batch size 1"""
+    def __init__(self):
+        super(SqueezeLastTwo, self).__init__()
+
+    def forward(self, x):
+        return x.view(x.shape[0], x.shape[1])
+
+
 
 # 定义对比学习模型
 class SimCLR(nn.Module):
     def __init__(self, args, in_channel):
         super(SimCLR, self).__init__()
+        self.args = args
         if args.dataset == 'rotatedmnist':
+            self.encoder = nn.Sequential(
+                nn.Conv2d(in_channels=in_channel, out_channels=64, kernel_size=3, stride=1, padding=1),
+                nn.ReLU(),
+                nn.GroupNorm(8, 64),
+                nn.MaxPool2d(kernel_size=2, stride=2),
+                nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
+                nn.ReLU(),
+                nn.GroupNorm(8, 128),
+                nn.MaxPool2d(kernel_size=2, stride=2),
+                # MixStyle(p=0.5, alpha=0.1),
+                nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=2, padding=1),
+                nn.ReLU(),
+                nn.GroupNorm(8, 256),
+                nn.Conv2d(in_channels=256, out_channels=2*args.embedding_d, kernel_size=3, stride=2, padding=1),
+                nn.ReLU(),
+                nn.GroupNorm(8, 2*args.embedding_d),
+                nn.AdaptiveAvgPool2d((1,1)),
+                SqueezeLastTwo(),
+            )
             # self.encoder = nn.Sequential(
-            #     nn.Conv2d(in_channels=in_channel, out_channels=64, kernel_size=3, stride=1, padding=1),
+            #     nn.Conv2d(in_channels=in_channel, out_channels=16, kernel_size=5, padding=2),
+            #     nn.BatchNorm2d(16),
+            #     nn.ReLU(),
+            #     nn.MaxPool2d(2), # 14x14x32
+            #     nn.Conv2d(in_channels=16, out_channels=32, kernel_size=5, padding=2),
+            #     nn.BatchNorm2d(32),
+            #     nn.ReLU(),
+            #     nn.MaxPool2d(2), # 7x7x64
+            #     # MixStyle(p=0.5, alpha=0.1),
+            #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2),
             #     nn.BatchNorm2d(64),
             #     nn.ReLU(),
-            #     nn.MaxPool2d(kernel_size=2, stride=2),
-            #     nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
-            #     nn.BatchNorm2d(128),
-            #     nn.ReLU(),
-            #     nn.MaxPool2d(kernel_size=2, stride=2),
-            #     # MixStyle(p=0.5, alpha=0.1),
-            #     nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=2, padding=1),
-            #     nn.BatchNorm2d(256),
-            #     nn.ReLU(),
-            #     nn.MaxPool2d(kernel_size=2, stride=2),
+            #     nn.MaxPool2d(2), # 3X3x64
             #     Flatten(),
-            #     # nn.Linear(1024, 1024),
-            #     # nn.ReLU(),
-            #     # nn.Linear(1024, 120),
-            #     # nn.ReLU()
+            #     nn.Linear(576, 2*args.embedding_d)
             # )
-            self.encoder = nn.Sequential(
-                nn.Conv2d(in_channels=in_channel, out_channels=16, kernel_size=5, padding=2),
-                nn.BatchNorm2d(16),
-                nn.ReLU(),
-                nn.MaxPool2d(2), # 14x14x32
-                nn.Conv2d(in_channels=16, out_channels=32, kernel_size=5, padding=2),
-                nn.BatchNorm2d(32),
-                nn.ReLU(),
-                nn.MaxPool2d(2), # 7x7x64
-                MixStyle(p=0.5, alpha=0.1),
-                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2),
-                nn.BatchNorm2d(64),
-                nn.ReLU(),
-                nn.MaxPool2d(2), # 3X3x64
-                Flatten(),
-                nn.Linear(576, 2*args.embedding_d)
-            )
+
             self.projection_head = nn.Sequential(
                 nn.ReLU(),
                 nn.Linear(2*args.embedding_d, args.embedding_d),
@@ -536,7 +549,8 @@ class SimCLR(nn.Module):
                 nn.ReLU(),
                 nn.Linear(args.embedding_d, args.classes)
             )
-            self.classifier = nn.Sequential(self.projection_head,self.prediction)
+            self.classifier = nn.Sequential(self.projection_head, self.prediction)
+            self.cls = nn.Linear(args.embedding_d, args.classes)
         else:
             self.encoder = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec)
             state_dict = torch.load("models/alexnet_caffe.pth.tar")
@@ -560,6 +574,18 @@ class SimCLR(nn.Module):
             if isinstance(layer,torch.nn.Linear):
                 init.xavier_uniform_(layer.weight,0.1)
                 layer.bias.data.zero_()
+
+    def featurize(self,x,num_samples=1,return_dist=False):
+        z_params = self.encoder(x)
+        z_mu = z_params[:,:self.args.embedding_d]
+        z_sigma = F.softplus(z_params[:,self.args.embedding_d:])
+        z_dist = distributions.Independent(distributions.normal.Normal(z_mu,z_sigma),1)
+        z = z_dist.rsample(torch.Size([num_samples])).view([-1,self.args.embedding_d])
+        
+        if return_dist:
+            return z, (z_mu,z_sigma)
+        else:
+            return z
 
     def forward(self, x):
         feature = self.encoder(x)

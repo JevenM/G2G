@@ -116,6 +116,12 @@ class Node(object):
 
         # self.lossFunc = LabelSmoothingLoss(args.label_smoothing, lbl_set_size=args.classes)
 
+        self.r_mu = nn.Parameter(torch.zeros(args.classes,args.embedding_d, device=self.device))
+        self.r_sigma = nn.Parameter(torch.ones(args.classes,args.embedding_d, device=self.device))
+        self.C = nn.Parameter(torch.ones([], device=self.device))
+        self.optm_cl.add_param_group({'params':[self.r_mu,self.r_sigma,self.C],'lr':args.cl_lr,'momentum':0.9})
+
+
     def fork(self, global_node):
         self.meme = copy.deepcopy(global_node.model).to(self.device)
         # self.meme_optimizer = init_optimizer(self.meme, self.args)
@@ -159,12 +165,13 @@ class Global_Node(object):
             # self.model = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
             # self.optm_cls = optim.Adam(self.model.fc.parameters(), lr=args.cls_lr, weight_decay=5e-4)
             # self.model = Model.SimCLR(args, in_channel).to(self.device)
-            self.optm_ssl = optim.SGD(self.model.parameters(), lr=args.cls_lr, weight_decay=5e-4)
+            # self.optm_ssl = optim.SGD(self.model.parameters(), lr=args.cls_lr, weight_decay=5e-4)
+            self.model_optimizer = optim.SGD(self.model.parameters(), lr=args.cls_lr, weight_decay=5e-4)
         else:
             in_channel = 3
             self.model = init_model(self.args.global_model, args).to(self.device)
         
-        self.model_optimizer = init_optimizer(self.model, self.args)
+        # self.model_optimizer = init_optimizer(self.model, self.args)
         self.test_data = test_data
         self.Dict = self.model.state_dict()
         afsche_global = optim.lr_scheduler.ReduceLROnPlateau(self.model_optimizer, factor=args.factor, patience=args.patience,
@@ -216,7 +223,7 @@ class Global_Node(object):
         # print(f"self.Dict: {self.Dict}")
         self.model.load_state_dict(dict_1)
         '''
-    def merge_weights_ssl(self, Node_List, acc_list):
+    def merge_weights_ssl(self, Node_List, acc_list=[]):
         # acc_list_norm = [float(acc) / sum(acc_list) for acc in acc_list]
         weights_zero(self.model)
         # FedAvg，每个node的meme和global model的结构一样
@@ -245,7 +252,8 @@ class Global_Node(object):
 
     def fork(self, node):
         self.model = copy.deepcopy(node.meme).to(self.device)
-        self.model_optimizer = init_optimizer(self.model, self.args)
+        # self.model_optimizer = init_optimizer(self.model, self.args)
+        self.model_optimizer = optim.SGD(self.model.parameters(), lr=self.args.cls_lr, weight_decay=5e-4)
 
     # def fork_local(self, node):
     #     self.model = copy.deepcopy(node.model).to(self.device)

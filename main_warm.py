@@ -91,17 +91,20 @@ for rounds in range(args.R):
             train_ssl(Node_List[k], args, logger, rounds, summary_writer)
             # train_classifier(Node_List[k], args, logger, rounds, summary_writer)
             recorder.validate(Node_List[k], summary_writer)
-            recorder.test_on_target(Node_List[k], summary_writer, rounds)
-        elif args.algorithm == 'fed_mutual':
+            # recorder.test_on_target(Node_List[k], summary_writer, rounds)
+        # elif args.algorithm == 'fed_mutual':
+        else:
             recorder.printer(Node_List[k])
             Global_node.fork(Node_List[k])
             recorder.printer(Global_node)
-            recorder.validate(Global_node, summary_writer)
-        elif args.algorithm == 'fed_avg':
             recorder.validate(Node_List[k], summary_writer)
-            recorder.test_on_target(Node_List[k], summary_writer, rounds)
+            # recorder.validate(Global_node, summary_writer)
+        # elif args.algorithm == 'fed_avg':
+            # recorder.validate(Node_List[k], summary_writer)
+            # recorder.test_on_target(Node_List[k], summary_writer, rounds)
+        recorder.test_on_target(Node_List[k], summary_writer, rounds)
         if rounds == args.R-1:
-                dimension_reduction(Node_List[k], Data, rounds)
+            dimension_reduction(Node_List[k], Data, rounds)
     
     if args.algorithm == 'fed_adv' and is_continue:
         acc_list = []
@@ -128,10 +131,11 @@ for rounds in range(args.R):
 
     elif args.algorithm == 'fed_avg':
         Global_node.merge(Node_List)
-        recorder.server_test_on_target(Global_node, summary_writer, rounds)
+    elif args.algorithm == 'fed_sr':
+        Global_node.merge_weights_ssl(Node_List)
     elif args.algorithm == 'fed_mutual':
         logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))
-    # TODO 为fedavg写一个server test on target的函数
+    recorder.server_test_on_target(Global_node, summary_writer, rounds)
     if rounds == args.R-1:
         dimension_reduction(Global_node, Data, rounds)
 recorder.finish()
