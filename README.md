@@ -39,6 +39,9 @@ pymao main_warm.py --node_num 3 --device cuda:0 --dataset office-home --classes 
 pymao main_warm.py --node_num 3  --device cuda:0 --dataset vlcs --classes 5 --lr 0.0008 --global_model Alexnet --local_model Alexnet --algorithm fed_adv --R 50 --E 7 --pretrained True --batch_size 64 --iteration 0 
 ```
 
+pymao main_warm.py --node_num 3  --device cuda:1 --dataset vlcs --classes 5 --lr 0.0008 --global_model Alexnet --local_model Alexnet --algorithm fed_adv --R 60 --E 1 --pretrained True --batch_size 512 --iteration 3 --method ssl --simclr_e 10 --gen_e 2 --discr_e 2 --disc_lr 0.001 --gen_lr 0.001 --cl_lr 0.0001 --cls_epochs 10 --cls_lr 0.001 --ce_epochs 100
+
+
 #### RotatedMNIST
 
 ```
@@ -49,3 +52,4 @@ pymao main_warm.py --node_num 5  --device cuda:0 --dataset rotatedmnist --classe
 ```
 pymao main_warm.py --node_num 5  --device cuda:0 --dataset rotatedmnist --classes 10 --lr 0.0008 --global_model Alexnet --local_model Alexnet --algorithm fed_mutual --R 60 --E 1 --pretrained True --batch_size 512 --iteration 4 --cls_epochs 10 --discr_e 2 --gen_e 2 --cl_lr 0.001 --cls_lr 0.001 --disc_lr 0.001 --gen_lr 0.001 --simclr_e 10 --method ssl --cls_epochs 10 --cls_lr 0.001
 ```
+

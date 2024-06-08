@@ -185,7 +185,7 @@ class Recorder(object):
                     output = node.cl_model(data)
                 elif self.args.algorithm == 'fed_sr':
                     z = node.cl_model.featurize(data,num_samples=20)
-                    preds = torch.softmax(node.cl_model.cls(z),dim=1)
+                    preds = torch.softmax(node.cl_model.prediction(z),dim=1)
                     preds = preds.view([20,-1,node.args.classes]).mean(0)
                     output = torch.log(preds)
                 if isinstance(output, tuple) and self.args.algorithm == 'fed_adv':
@@ -284,7 +284,7 @@ class Recorder(object):
                     features, embed, outputs = output
                 elif self.args.algorithm == 'fed_sr':
                     z = node.cl_model.featurize(data,num_samples=20)
-                    preds = torch.softmax(node.cl_model.cls(z),dim=1)
+                    preds = torch.softmax(node.cl_model.prediction(z),dim=1)
                     preds = preds.view([20,-1,node.args.classes]).mean(0)
                     outputs = torch.log(preds)
                 
@@ -342,7 +342,7 @@ class Recorder(object):
                     z = node.model.featurize(data,num_samples=20)
                     # 1!!!!!!!!!!torch.Size([10240, 512])
                     # self.logger.info(f"1!!!!!!!!!!{z.shape}")
-                    preds = torch.softmax(node.model.cls(z),dim=1)
+                    preds = torch.softmax(node.model.prediction(z),dim=1)
                     # 2!!!!!!!!!!torch.Size([10240, 10])
                     # self.logger.info(f"2!!!!!!!!!!{preds.shape}")
                     preds = preds.view([20,-1,node.args.classes]).mean(0)

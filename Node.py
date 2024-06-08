@@ -63,19 +63,23 @@ class Node(object):
         self.train_data = train_data
         self.test_data = test_data
         self.target_loader = target_load
-        self.model = init_model(self.args.local_model,args).to(self.device)
-        self.optimizer = init_optimizer(self.model, self.args)
+
+        # self.model = init_model(self.args.local_model,args).to(self.device)
+        # self.optimizer = init_optimizer(self.model, self.args)
+
         if args.dataset == 'rotatedmnist':
-            flatten_dim = 28*28
+            # flatten_dim = 28*28
             in_channel = 1
-            self.model = Model.SimCLR(args, in_channel).to(self.device)
-            self.optimizer = optim.Adam(self.model.parameters(), lr=args.cl_lr, weight_decay=5e-4)
+            dim = 2*args.embedding_d
         else:
-            flatten_dim = 225*225*3
+            # flatten_dim = 225*225*3
             in_channel = 3
+            dim = args.hidden_size
+        self.model = Model.SimCLR(args, in_channel).to(self.device)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=args.cl_lr, weight_decay=5e-4)
         # self.gen_model = Model.Generator1(args.classes, flatten_dim).to(self.device)
         # self.gen_model = Model.Generator(args.latent_space, args.classes, flatten_dim).to(self.device)
-        self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, 2*args.embedding_d).to(self.device)
+        self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, dim).to(self.device)
         self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=args.gen_lr, weight_decay=5e-4)
         
         if args.method == 'simsiam':
@@ -83,24 +87,24 @@ class Node(object):
         else:
             self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
         self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=args.cl_lr, weight_decay=5e-4)
-        self.optm_fc = optim.SGD(self.cl_model.prediction.parameters(), lr=args.cls_lr, weight_decay=5e-4)
+        self.optm_fc = optim.SGD(self.cl_model.classifier.parameters(), lr=args.cls_lr, weight_decay=5e-4)
         self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=30, gamma=0.99)
         # 判断是否是真样本
         # self.disc_model = Model.Discriminator(flatten_dim, args.classes).to(self.device)
-        self.disc_model = Model.DiscriminatorFeature(2*args.embedding_d, args.classes).to(self.device)
+        self.disc_model = Model.DiscriminatorFeature(dim, args.classes).to(self.device)
         self.optm_disc = optim.Adam(self.disc_model.parameters(), lr=args.disc_lr, weight_decay=5e-4)
         # 判断是否是目标域
         # self.disc_model2 = Model.Discriminator2(flatten_dim).to(self.device)
-        self.disc_model2 = Model.DiscriminatorFeature2(2*args.embedding_d).to(self.device)
+        self.disc_model2 = Model.DiscriminatorFeature2(dim).to(self.device)
         self.optm_disc2 = optim.Adam(self.disc_model2.parameters(), lr=args.disc_lr, weight_decay=5e-4)
 
         # self.clser = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
         # self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=args.cls_lr, weight_decay=5e-4)
-        self.meme = init_model(self.args.global_model,args).to(self.device)
-        self.meme_optimizer = init_optimizer(self.meme, self.args)
-        if args.algorithm != 'fed_adv':
-            self.meme = Model.SimCLR(args, in_channel).to(self.device)
-            self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=args.cl_lr, weight_decay=5e-4)
+        # self.meme = init_model(self.args.global_model,args).to(self.device)
+        # self.meme_optimizer = init_optimizer(self.meme, self.args)
+        # if args.algorithm != 'fed_adv':
+        self.meme = Model.SimCLR(args, in_channel).to(self.device)
+        self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=args.cl_lr, weight_decay=5e-4)
             
         self.Dict = self.meme.state_dict()
 
@@ -150,12 +154,16 @@ class Global_Node(object):
         self.args = args
         self.device = self.args.device
         self.proto = None
+        if args.dataset == 'rotatedmnist':
+            dim = 2*args.embedding_d
+        else:
+            dim = args.hidden_size
         # self.synthesis_train_dataset = None
         # self.synthesis_train_loader = None
+        self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, dim).to(self.device)
         if args.dataset == 'rotatedmnist':
             in_channel = 1
             # self.gen_model = Model.Generator(args.latent_space, args.classes, 28*28).to(self.device)
-            self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, 2*args.embedding_d).to(self.device)
             # self.gen_model = Model.Generator1(args.classes).to(self.device)
             if args.method == 'simsiam':
                 self.model = SimSiam(in_channel).to(self.device)
@@ -166,11 +174,12 @@ class Global_Node(object):
             # self.optm_cls = optim.Adam(self.model.fc.parameters(), lr=args.cls_lr, weight_decay=5e-4)
             # self.model = Model.SimCLR(args, in_channel).to(self.device)
             # self.optm_ssl = optim.SGD(self.model.parameters(), lr=args.cls_lr, weight_decay=5e-4)
-            self.model_optimizer = optim.SGD(self.model.parameters(), lr=args.cls_lr, weight_decay=5e-4)
+            
         else:
             in_channel = 3
-            self.model = init_model(self.args.global_model, args).to(self.device)
-        
+            # self.model = init_model(self.args.global_model, args).to(self.device)
+            self.model = Model.SimCLR(args, in_channel).to(self.device)
+        self.model_optimizer = optim.SGD(self.model.parameters(), lr=args.cls_lr, weight_decay=5e-4)
         # self.model_optimizer = init_optimizer(self.model, self.args)
         self.test_data = test_data
         self.Dict = self.model.state_dict()
@@ -229,6 +238,8 @@ class Global_Node(object):
         # FedAvg，每个node的meme和global model的结构一样
         Node_State_List = [copy.deepcopy(Node_List[i].cl_model.state_dict()) for i in range(len(Node_List))]
         dict_1 = self.model.state_dict()
+        # print(f"!!!!!!!!!!!!!!{dict_1.keys()}")
+        # print(f"??????????????{Node_State_List[0].keys()}")
         for key in dict_1.keys():
             for i in range(len(Node_List)):
                 dict_1[key] += Node_State_List[i][key]
@@ -236,7 +247,6 @@ class Global_Node(object):
             dict_1[key] = dict_1[key]/len(Node_List)
         # print(f"self.Dict: {self.Dict}")
         self.model.load_state_dict(dict_1)
-
 
     def aggregate(self, Node_List):
         Pro_List = [Node_List[i].prototypes for i in range(len(Node_List))]

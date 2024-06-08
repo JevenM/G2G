@@ -253,7 +253,7 @@ def train_fedsr(node, args, logger, round, sw = None, epo=None):
         # x, y = next(iter(loader))
         x, y = x.to(node.device), y.to(node.device)
         z, (z_mu,z_sigma) = node.cl_model.featurize(x,return_dist=True)
-        logits = node.cl_model.cls(z)
+        logits = node.cl_model.prediction(z)
         loss = F.cross_entropy(logits,y)
 
         obj = loss
@@ -541,7 +541,7 @@ def train_ssl(node, args, logger, round, sw=None):
             num_random = batchsize - num_same
             lab_same = labels.cpu()[torch.randperm(batchsize)[:num_same]]
             # 生成剩余 num_random 个随机元素
-            lab_random = torch.randint(0, 10, (num_random,))
+            lab_random = torch.randint(0, args.classes, (num_random,))
             # 将两部分拼接起来
             lab_ = torch.cat((lab_same, lab_random))
             # 打乱顺序
@@ -559,18 +559,20 @@ def train_ssl(node, args, logger, round, sw=None):
             if args.dataset == 'rotatedmnist':
                 w_h = 28
                 in_c = 1
+                dim = 2*args.embedding_d
             else:
                 w_h = 255
                 in_c = 3
+                dim = args.hidden_size
             feature1, embeddings_orig, out_r = node.cl_model(real_images)
             # feature2, embeddings_gen, out_f = node.cl_model(fake_images.view(batchsize, in_c, w_h, w_h))
-            ls_,ou_loss_norm = 0.0, 0.0
-            ou_loss_norm1  =0.0
-            if round >= 0:#args.R / 2:
+            ls_,ls_2,ou_loss_norm = 0.0, 0.0, 0.0
+            ou_loss_norm1  = 0.0
+            if round > 30:#args.R / 2:
                 cc1 = torch.zeros(args.classes)
-                proto1 = torch.zeros(args.classes, 2*args.embedding_d).to(args.device)
+                proto1 = torch.zeros(args.classes, dim).to(args.device)
                 cc2 = torch.zeros(args.classes)
-                proto2 = torch.zeros(args.classes, 2*args.embedding_d).to(args.device)
+                proto2 = torch.zeros(args.classes, dim).to(args.device)
                 # 遍历z1对应的label
                 for i in range(args.classes):  # 遍历每个类别
                     class_ind = (labels == i)  # 找到属于当前类别的样本的索引
@@ -744,8 +746,7 @@ def evaluate_model(device, model, test_loader, logger):
     avg_loss = total_loss / total_samples
     accuracy = total_correct / total_samples
     
-    logger.info(f"Test Loss: {avg_loss}")
-    logger.info(f"Test Accuracy: {accuracy}")
+    logger.info(f"Test Loss: {avg_loss} Test Accuracy: {accuracy}")
     return accuracy, avg_loss
 
 def train_ce(node, args, logger, round, sw=None):
@@ -783,7 +784,7 @@ def train_ce(node, args, logger, round, sw=None):
         accuracy_train = total_correct / total_samples
 
         sw.add_scalar(f'Train-ce/loss/{node.num}', running_loss_ce_t / len(train_loader), round*args.ce_epochs+k) # type: ignore
-        logger.info('Epoch [%d/%d], node %d: Loss_ce: %.4f' % (k+1, args.ce_epochs, node.num, running_loss_ce_t / len(train_loader))) # type: ignore
+        logger.info('Epoch [%d/%d], node %d: Loss_ce: %.4f, Acc: %.4f' % (k+1, args.ce_epochs, node.num, running_loss_ce_t / len(train_loader), accuracy_train)) # type: ignore
         sw.add_scalar(f'Train-ce/acc/{node.num}', accuracy_train, round*args.ce_epochs+k) # type: ignore
 
         acc_test, loss_test = evaluate_model(node.device, copy.deepcopy(node.cl_model), node.test_data, logger) # type: ignore

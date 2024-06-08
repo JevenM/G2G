@@ -96,6 +96,9 @@ for rounds in range(args.R):
         else:
             recorder.printer(Node_List[k])
             Global_node.fork(Node_List[k])
+            # print("##################################")
+            # print(Node_List[k].cl_model.parameters())
+            # print(Node_List[k].cl_model.state_dict())
             recorder.printer(Global_node)
             recorder.validate(Node_List[k], summary_writer)
             # recorder.validate(Global_node, summary_writer)
@@ -131,11 +134,13 @@ for rounds in range(args.R):
 
     elif args.algorithm == 'fed_avg':
         Global_node.merge(Node_List)
+        recorder.server_test_on_target(Global_node, summary_writer, rounds)
     elif args.algorithm == 'fed_sr':
         Global_node.merge_weights_ssl(Node_List)
+        recorder.server_test_on_target(Global_node, summary_writer, rounds)
     elif args.algorithm == 'fed_mutual':
         logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))
-    recorder.server_test_on_target(Global_node, summary_writer, rounds)
+        recorder.server_test_on_target(Global_node, summary_writer, rounds)
     if rounds == args.R-1:
         dimension_reduction(Global_node, Data, rounds)
 recorder.finish()
