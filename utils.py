@@ -159,7 +159,10 @@ class Recorder(object):
             else:
                 node.model.to(node.device).eval()
         elif self.args.algorithm == 'fed_adv':
-            node.cl_model.to(node.device).eval()
+            if node.num != 0:
+                node.cl_model.to(node.device).eval()
+            else:
+                node.model.to(node.device).eval()
         elif self.args.algorithm == 'fed_sr':
             if node.num != 0:
                 node.cl_model.to(node.device).eval()
@@ -182,7 +185,10 @@ class Recorder(object):
                     else:
                         output = node.model(data)
                 elif self.args.algorithm == 'fed_adv':
-                    output = node.cl_model(data)
+                    if node.num != 0:
+                        output = node.cl_model(data)
+                    else:
+                        output = node.model(data)
                 elif self.args.algorithm == 'fed_sr':
                     z = node.cl_model.featurize(data,num_samples=20)
                     preds = torch.softmax(node.cl_model.prediction(z),dim=1)
@@ -533,7 +539,7 @@ def to_img(x, dataset):
         out = x.clamp(0, 1)  # Clamp函数可以将随机变化的数值限制在一个给定的区间[min, max]内：
         out = out.view(-1, 1, 28, 28)
     else:
-        out = out.view(-1, 3, 225, 225)  # view()函数作用是将一个多行的Tensor,拼接成一行
+        out = x.view(-1, 3, 225, 225)  # view()函数作用是将一个多行的Tensor,拼接成一行
     return out
 
 def LR_scheduler(rounds, Node_List, args, Global_node = None, logger=None):

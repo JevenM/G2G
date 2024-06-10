@@ -56,7 +56,8 @@ def args_parser():
                         help='')
     parser.add_argument('--save_model', type=bool, default=False,
                         help='')
-    
+    parser.add_argument('--warm', type=int, default=10, 
+                        help='number of epochs to want before ssl (10)')
     parser.add_argument('--server_e', type=int, default=10,
                         help='')
     

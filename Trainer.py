@@ -405,7 +405,7 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
         #       'D real: {:.6f}, D fake: {:.6f}'.format(epoch, num_epoch, loss_disc.data.item(), loss_gen.data.item(), loss.data.item(),
         #                                              real_scores.data.mean(), fake_scores.data.mean()  # 打印的是真实图片的损失均值
         #     ))
-        if round == 1 and iter_==len(train_loader)-1:
+        if round == 0 and iter_==len(train_loader)-1:
             real_images = to_img(real_images.cuda().data, args.dataset)
             save_image(real_images, os.path.join(args.save_path+"/gen_images/", '{}_real_images.png'.format(str(node.num))))
             # save_img(real_images, os.path.join(args.save_path+"/gen_images/", '_real_images.png'), batchsize)
@@ -568,7 +568,7 @@ def train_ssl(node, args, logger, round, sw=None):
             # feature2, embeddings_gen, out_f = node.cl_model(fake_images.view(batchsize, in_c, w_h, w_h))
             ls_,ls_2,ou_loss_norm = 0.0, 0.0, 0.0
             ou_loss_norm1  = 0.0
-            if round > 30:#args.R / 2:
+            if round > args.warm:#args.R / 2:
                 cc1 = torch.zeros(args.classes)
                 proto1 = torch.zeros(args.classes, dim).to(args.device)
                 cc2 = torch.zeros(args.classes)
@@ -673,6 +673,7 @@ def train_ssl(node, args, logger, round, sw=None):
         
             loss.backward()
             node.optm_cl.step()
+            nn.utils.clip_grad_norm_(node.cl_model.parameters(), max_norm=1.0)
             ls += loss.item()
         sw.add_scalar(f'Train-ssl/ce_t_loss/{node.num}', running_loss_ce_t / len(train_loader), round*args.simclr_e+k) # type: ignore
         sw.add_scalar(f'Train-ssl/sim_loss/{node.num}', running_ls_norm / len(train_loader), round*args.simclr_e+k) # type: ignore

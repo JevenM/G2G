@@ -266,7 +266,7 @@ class feature_extractor(nn.Module):
             ("drop7", nn.Dropout())
         ]))
 
-        self.optimizer = optimizer(list(self.features.parameters())+list(self.classifier.parameters()), lr=lr, momentum=momentum, weight_decay=weight_decay)
+        # self.optimizer = optimizer(list(self.features.parameters())+list(self.classifier.parameters()), lr=lr, momentum=momentum, weight_decay=weight_decay)
         self.initial_params()
 
     def initial_params(self):
@@ -274,9 +274,23 @@ class feature_extractor(nn.Module):
             if isinstance(layer,torch.nn.Linear):
                 init.xavier_uniform_(layer.weight,0.1)
                 layer.bias.data.zero_()
+    # def initial_params(self):
+    #     for layer in self.modules():
+    #         if isinstance(layer,torch.nn.Conv2d):
+    #             init.kaiming_normal_(layer.weight,a=0,mode='fan_in')
+    #             if layer.bias is not None:
+    #                 init.constant_(layer.bias, 0)
+    #         elif isinstance(layer,torch.nn.Linear):
+    #             init.kaiming_normal_(layer.weight)
+    #             if layer.bias is not None:
+    #                 init.constant_(layer.bias, 0)
+    #         elif isinstance(layer,torch.nn.BatchNorm2d) or isinstance(layer,torch.nn.BatchNorm1d):
+    #             layer.weight.data.fill_(1)
+    #             layer.bias.data.zero_()
 
     def forward(self, x):
         f = self.features(x*57.6)
+        # f = self.features(x)
         f = f.view((f.size(0),256*6*6))
         o = self.classifier(f)
         return o
@@ -285,12 +299,26 @@ class task_classifier(nn.Module):
     def __init__(self, hidden_size, optimizer, lr, momentum, weight_decay, class_num=5):
         super(task_classifier,self).__init__()
         self.task_classifier = nn.Sequential()
-        self.task_classifier.add_module('t1_fc1', nn.Linear(hidden_size, hidden_size))
+        # self.task_classifier.add_module('t1_fc1', nn.Linear(hidden_size, hidden_size))
+        # self.task_classifier.add_module('t1_relu', nn.ReLU())
         self.task_classifier.add_module('t1_fc2', nn.Linear(hidden_size, class_num))
-        self.optimizer = optimizer(self.task_classifier.parameters(),
-                                   lr=lr, momentum=momentum, weight_decay=weight_decay)
+        # self.optimizer = optimizer(self.task_classifier.parameters(),
+        #                            lr=lr, momentum=momentum, weight_decay=weight_decay)
         self.initialize_paras()
 
+    # def initialize_paras(self):
+    #     for layer in self.modules():
+    #         if isinstance(layer,torch.nn.Conv2d):
+    #             init.kaiming_normal_(layer.weight,a=0,mode='fan_in')
+    #             if layer.bias is not None:
+    #                 init.constant_(layer.bias, 0)
+    #         elif isinstance(layer,torch.nn.Linear):
+    #             init.kaiming_normal_(layer.weight)
+    #             if layer.bias is not None:
+    #                 init.constant_(layer.bias, 0)
+    #         elif isinstance(layer,torch.nn.BatchNorm2d) or isinstance(layer,torch.nn.BatchNorm1d):
+    #             layer.weight.data.fill_(1)
+    #             layer.bias.data.zero_()
     def initialize_paras(self):
         for layer in self.modules():
             if isinstance(layer,torch.nn.Conv2d):
@@ -539,32 +567,48 @@ class SimCLR(nn.Module):
             )
             self.classifier = nn.Sequential(self.projection_head, self.prediction)
             # self.cls = nn.Linear(args.embedding_d, args.classes)
+            self.initial_params()
         else:
-            self.encoder = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec)
+            self.encoder = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec, args.classes)
             state_dict = torch.load("models/alexnet_caffe.pth.tar")
             del state_dict["classifier.6.weight"]
             del state_dict["classifier.6.bias"]
             self.encoder.load_state_dict(state_dict)
 
             self.projection_head = nn.Sequential(OrderedDict([
-                ("1", nn.Linear(args.hidden_size, args.hidden_size)),
-                ("relu6", nn.ReLU()),
-                ("drop6", nn.Dropout()),
-
-                ("4", nn.Linear(args.hidden_size, args.embedding_d)),
-                ("relu7", nn.ReLU()),
-                ("drop7", nn.Dropout())
+                # ("1", nn.Linear(args.hidden_size, args.hidden_size//2)),
+                # ("relu6", nn.ReLU()),
+                # ("drop6", nn.Dropout()),
+                ("id", nn.Identity()),
+                # ("4", nn.Linear(args.hidden_size//2, args.embedding_d)),
+                # ("relu7", nn.ReLU()),
+                # ("drop7", nn.Dropout())
             ]))
-            self.prediction = task_classifier(args.embedding_d, optim.SGD, args.lr0, args.momentum, args.weight_dec,
+            self.prediction = task_classifier(args.hidden_size, optim.SGD, args.lr0, args.momentum, args.weight_dec,
                                                 class_num=args.classes)
+            # self.prediction = nn.Linear(args.hidden_size, args.classes)
             self.classifier = nn.Sequential(self.projection_head, self.prediction)
-        self.initial_params()
+    #     self.initial_params()
 
     def initial_params(self):
         for layer in self.modules():
             if isinstance(layer,torch.nn.Linear):
                 init.xavier_uniform_(layer.weight,0.1)
                 layer.bias.data.zero_()
+
+    # def initial_params(self):
+    #     for layer in self.modules():
+    #         if isinstance(layer,torch.nn.Conv2d):
+    #             init.kaiming_normal_(layer.weight,a=0,mode='fan_in')
+    #             if layer.bias is not None:
+    #                 init.constant_(layer.bias, 0)
+    #         elif isinstance(layer,torch.nn.Linear):
+    #             init.kaiming_normal_(layer.weight)
+    #             if layer.bias is not None:
+    #                 init.constant_(layer.bias, 0)
+    #         elif isinstance(layer,torch.nn.BatchNorm2d) or isinstance(layer,torch.nn.BatchNorm1d):
+    #             layer.weight.data.fill_(1)
+    #             layer.bias.data.zero_()
 
     def featurize(self,x,num_samples=1,return_dist=False):
         z_params = self.encoder(x)
@@ -580,10 +624,10 @@ class SimCLR(nn.Module):
 
     def forward(self, x):
         feature = self.encoder(x)
-        # feature = x.view((x.size(0), -1))
         embeddings = self.projection_head(feature)
         out = self.prediction(embeddings)
         return feature, embeddings, out
+        
 
 
 class Discriminator(nn.Module):

@@ -84,10 +84,10 @@ for rounds in range(args.R):
         if args.algorithm == 'fed_adv' and rounds == 0:
             train_ce(Node_List[k], args, logger, rounds, summary_writer)
             is_continue = False
-        elif args.algorithm == 'fed_adv'and rounds > 30:#<= 30:
+        elif args.algorithm == 'fed_adv'and rounds > args.warm:#<= 30:
             for epoch in range(args.E):
                 Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
-        if args.algorithm == 'fed_adv' and rounds > 0: #> 30:
+        if args.algorithm == 'fed_adv' and rounds > 0:
             train_ssl(Node_List[k], args, logger, rounds, summary_writer)
             # train_classifier(Node_List[k], args, logger, rounds, summary_writer)
             recorder.validate(Node_List[k], summary_writer)
@@ -113,7 +113,7 @@ for rounds in range(args.R):
         acc_list = []
         # for node in Node_List:
         #     acc_list.append(recorder.target_acc[str(node.num)][-1])
-        if rounds >30:#<= 30:
+        if rounds > args.warm:#<= 30:
             Global_node.merge_weights_gen(Node_List, acc_list)
             for n_ in range(len(Node_List)):
                 Node_List[n_].local_fork_gen(Global_node)

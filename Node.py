@@ -76,35 +76,35 @@ class Node(object):
             in_channel = 3
             dim = args.hidden_size
         self.model = Model.SimCLR(args, in_channel).to(self.device)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=args.cl_lr, weight_decay=5e-4)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=args.cl_lr, weight_decay=1e-4)
         # self.gen_model = Model.Generator1(args.classes, flatten_dim).to(self.device)
         # self.gen_model = Model.Generator(args.latent_space, args.classes, flatten_dim).to(self.device)
         self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, dim).to(self.device)
-        self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=args.gen_lr, weight_decay=5e-4)
+        self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=args.gen_lr, weight_decay=1e-4)
         
         if args.method == 'simsiam':
             self.cl_model = SimSiam(in_channel).to(self.device)
         else:
             self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
-        self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=args.cl_lr, weight_decay=5e-4)
-        self.optm_fc = optim.SGD(self.cl_model.classifier.parameters(), lr=args.cls_lr, weight_decay=5e-4)
-        self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=30, gamma=0.99)
+        self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=args.cl_lr, weight_decay=1e-4)
+        self.optm_fc = optim.Adam(self.cl_model.classifier.parameters(), lr=args.cls_lr, weight_decay=1e-4)
+        self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=10, gamma=0.99)
         # 判断是否是真样本
         # self.disc_model = Model.Discriminator(flatten_dim, args.classes).to(self.device)
         self.disc_model = Model.DiscriminatorFeature(dim, args.classes).to(self.device)
-        self.optm_disc = optim.Adam(self.disc_model.parameters(), lr=args.disc_lr, weight_decay=5e-4)
+        self.optm_disc = optim.Adam(self.disc_model.parameters(), lr=args.disc_lr, weight_decay=1e-4)
         # 判断是否是目标域
         # self.disc_model2 = Model.Discriminator2(flatten_dim).to(self.device)
         self.disc_model2 = Model.DiscriminatorFeature2(dim).to(self.device)
-        self.optm_disc2 = optim.Adam(self.disc_model2.parameters(), lr=args.disc_lr, weight_decay=5e-4)
+        self.optm_disc2 = optim.Adam(self.disc_model2.parameters(), lr=args.disc_lr, weight_decay=1e-4)
 
         # self.clser = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
-        # self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=args.cls_lr, weight_decay=5e-4)
+        # self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=args.cls_lr, weight_decay=1e-4)
         # self.meme = init_model(self.args.global_model,args).to(self.device)
         # self.meme_optimizer = init_optimizer(self.meme, self.args)
         # if args.algorithm != 'fed_adv':
         self.meme = Model.SimCLR(args, in_channel).to(self.device)
-        self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=args.cl_lr, weight_decay=5e-4)
+        self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=args.cl_lr, weight_decay=1e-4)
             
         self.Dict = self.meme.state_dict()
 
@@ -119,30 +119,30 @@ class Node(object):
                                                after_scheduler= afsche_meme)
 
         # self.lossFunc = LabelSmoothingLoss(args.label_smoothing, lbl_set_size=args.classes)
-
-        self.r_mu = nn.Parameter(torch.zeros(args.classes,args.embedding_d, device=self.device))
-        self.r_sigma = nn.Parameter(torch.ones(args.classes,args.embedding_d, device=self.device))
-        self.C = nn.Parameter(torch.ones([], device=self.device))
-        self.optm_cl.add_param_group({'params':[self.r_mu,self.r_sigma,self.C],'lr':args.cl_lr,'momentum':0.9})
+        if args.algorithm == 'fed_sr':
+            self.r_mu = nn.Parameter(torch.zeros(args.classes,args.embedding_d, device=self.device))
+            self.r_sigma = nn.Parameter(torch.ones(args.classes,args.embedding_d, device=self.device))
+            self.C = nn.Parameter(torch.ones([], device=self.device))
+            self.optm_cl.add_param_group({'params':[self.r_mu,self.r_sigma,self.C],'lr':args.cl_lr,'momentum':0.9})
 
 
     def fork(self, global_node):
         self.meme = copy.deepcopy(global_node.model).to(self.device)
         # self.meme_optimizer = init_optimizer(self.meme, self.args)
-        self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=self.args.cl_lr, weight_decay=5e-4)
+        self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=self.args.cl_lr, weight_decay=1e-4)
 
     def local_fork_ssl(self, global_model):
         # print(f"global: {global_model.model.state_dict()}")
         # self.clser.load_state_dict(global_model.model.state_dict())
         self.cl_model = copy.deepcopy(global_model.model)
-        self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=self.args.cl_lr, weight_decay=5e-4)
-        self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=100, gamma=0.99)
-        self.optm_fc = optim.SGD(self.cl_model.prediction.parameters(), lr=self.args.cls_lr, weight_decay=5e-4)
+        self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=self.args.cl_lr, weight_decay=1e-4)
+        self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=10, gamma=0.99)
+        self.optm_fc = optim.Adam(self.cl_model.classifier.parameters(), lr=self.args.cls_lr, weight_decay=1e-4)
 
     def local_fork_gen(self, global_model):
         # print(f"global: {global_model.model.state_dict()}")
         self.gen_model = copy.deepcopy(global_model.gen_model)
-        self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=self.args.gen_lr, weight_decay=5e-4)
+        self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=self.args.gen_lr, weight_decay=1e-4)
 
     def fork_proto(self, protos):
         self.prototypes_global = protos
@@ -171,15 +171,15 @@ class Global_Node(object):
                 self.model = Model.SimCLR(args, in_channel).to(self.device)
             
             # self.model = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
-            # self.optm_cls = optim.Adam(self.model.fc.parameters(), lr=args.cls_lr, weight_decay=5e-4)
+            # self.optm_cls = optim.Adam(self.model.fc.parameters(), lr=args.cls_lr, weight_decay=1e-4)
             # self.model = Model.SimCLR(args, in_channel).to(self.device)
-            # self.optm_ssl = optim.SGD(self.model.parameters(), lr=args.cls_lr, weight_decay=5e-4)
+            # self.optm_ssl = optim.SGD(self.model.parameters(), lr=args.cls_lr, momentum=args.momentum, weight_decay=5e-4)
             
         else:
             in_channel = 3
             # self.model = init_model(self.args.global_model, args).to(self.device)
             self.model = Model.SimCLR(args, in_channel).to(self.device)
-        self.model_optimizer = optim.SGD(self.model.parameters(), lr=args.cls_lr, weight_decay=5e-4)
+        self.model_optimizer = optim.SGD(self.model.parameters(), lr=args.cls_lr, momentum=args.momentum, weight_decay=5e-4)
         # self.model_optimizer = init_optimizer(self.model, self.args)
         self.test_data = test_data
         self.Dict = self.model.state_dict()
@@ -263,7 +263,7 @@ class Global_Node(object):
     def fork(self, node):
         self.model = copy.deepcopy(node.meme).to(self.device)
         # self.model_optimizer = init_optimizer(self.model, self.args)
-        self.model_optimizer = optim.SGD(self.model.parameters(), lr=self.args.cls_lr, weight_decay=5e-4)
+        self.model_optimizer = optim.SGD(self.model.parameters(), lr=self.args.cls_lr, momentum=self.args.momentum, weight_decay=5e-4)
 
     # def fork_local(self, node):
     #     self.model = copy.deepcopy(node.model).to(self.device)
