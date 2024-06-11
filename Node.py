@@ -30,12 +30,12 @@ def init_model(model_type, args):
     return model
 
 
-def init_optimizer(model, args):
+def init_optimizer(model, args, in_lr):
     optimizer = []
     if args.optimizer == 'sgd':
-        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=5e-4)
+        optimizer = torch.optim.SGD(model.parameters(), lr=in_lr, momentum=args.momentum, weight_decay=5e-4)
     elif args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
+        optimizer = torch.optim.Adam(model.parameters(), lr=in_lr, weight_decay=1e-4)
     return optimizer
 
 
@@ -76,27 +76,33 @@ class Node(object):
             in_channel = 3
             dim = args.hidden_size
         self.model = Model.SimCLR(args, in_channel).to(self.device)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=args.cl_lr, weight_decay=1e-4)
+        # self.optimizer = optim.Adam(self.model.parameters(), lr=args.cl_lr, weight_decay=1e-4)
+        self.optimizer = init_optimizer(self.model, args, args.cl_lr)
         # self.gen_model = Model.Generator1(args.classes, flatten_dim).to(self.device)
         # self.gen_model = Model.Generator(args.latent_space, args.classes, flatten_dim).to(self.device)
         self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, dim).to(self.device)
-        self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=args.gen_lr, weight_decay=1e-4)
+        # self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=args.gen_lr, weight_decay=1e-4)
+        self.optm_gen = init_optimizer(self.gen_model, args, args.gen_lr)
         
         if args.method == 'simsiam':
             self.cl_model = SimSiam(in_channel).to(self.device)
         else:
             self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
-        self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=args.cl_lr, weight_decay=1e-4)
-        self.optm_fc = optim.Adam(self.cl_model.classifier.parameters(), lr=args.cls_lr, weight_decay=1e-4)
+        # self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=args.cl_lr, weight_decay=1e-4)
+        # self.optm_fc = optim.Adam(self.cl_model.classifier.parameters(), lr=args.cls_lr, weight_decay=1e-4)
+        self.optm_cl = init_optimizer(self.cl_model, args, args.cl_lr)
+        self.optm_fc = init_optimizer(self.cl_model.classifier, args, args.cls_lr)
         self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=10, gamma=0.99)
         # 判断是否是真样本
         # self.disc_model = Model.Discriminator(flatten_dim, args.classes).to(self.device)
         self.disc_model = Model.DiscriminatorFeature(dim, args.classes).to(self.device)
-        self.optm_disc = optim.Adam(self.disc_model.parameters(), lr=args.disc_lr, weight_decay=1e-4)
+        # self.optm_disc = optim.Adam(self.disc_model.parameters(), lr=args.disc_lr, weight_decay=1e-4)
+        self.optm_disc = init_optimizer(self.disc_model, args, args.disc_lr)
         # 判断是否是目标域
         # self.disc_model2 = Model.Discriminator2(flatten_dim).to(self.device)
         self.disc_model2 = Model.DiscriminatorFeature2(dim).to(self.device)
-        self.optm_disc2 = optim.Adam(self.disc_model2.parameters(), lr=args.disc_lr, weight_decay=1e-4)
+        # self.optm_disc2 = optim.Adam(self.disc_model2.parameters(), lr=args.disc_lr, weight_decay=1e-4)
+        self.optm_disc2 = init_optimizer(self.disc_model2, args, args.disc_lr)
 
         # self.clser = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
         # self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=args.cls_lr, weight_decay=1e-4)
@@ -104,8 +110,8 @@ class Node(object):
         # self.meme_optimizer = init_optimizer(self.meme, self.args)
         # if args.algorithm != 'fed_adv':
         self.meme = Model.SimCLR(args, in_channel).to(self.device)
-        self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=args.cl_lr, weight_decay=1e-4)
-            
+        # self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=args.cl_lr, weight_decay=1e-4)
+        self.meme_optimizer = init_optimizer(self.meme, args, args.cl_lr)  
         self.Dict = self.meme.state_dict()
 
         afsche_local = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=args.factor, patience=args.patience,
@@ -128,21 +134,24 @@ class Node(object):
 
     def fork(self, global_node):
         self.meme = copy.deepcopy(global_node.model).to(self.device)
-        # self.meme_optimizer = init_optimizer(self.meme, self.args)
-        self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=self.args.cl_lr, weight_decay=1e-4)
+        self.meme_optimizer = init_optimizer(self.meme, self.args, self.args.cl_lr)
+        # self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=self.args.cl_lr, weight_decay=1e-4)
 
     def local_fork_ssl(self, global_model):
         # print(f"global: {global_model.model.state_dict()}")
         # self.clser.load_state_dict(global_model.model.state_dict())
         self.cl_model = copy.deepcopy(global_model.model)
-        self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=self.args.cl_lr, weight_decay=1e-4)
+        # self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=self.args.cl_lr, weight_decay=1e-4)
+        self.optm_cl = init_optimizer(self.cl_model, self.args, self.args.cl_lr)
         self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=10, gamma=0.99)
-        self.optm_fc = optim.Adam(self.cl_model.classifier.parameters(), lr=self.args.cls_lr, weight_decay=1e-4)
+        # self.optm_fc = optim.Adam(self.cl_model.classifier.parameters(), lr=self.args.cls_lr, weight_decay=1e-4)
+        self.optm_fc = init_optimizer(self.cl_model.classifier, self.args, self.args.cls_lr)
 
     def local_fork_gen(self, global_model):
         # print(f"global: {global_model.model.state_dict()}")
         self.gen_model = copy.deepcopy(global_model.gen_model)
-        self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=self.args.gen_lr, weight_decay=1e-4)
+        # self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=self.args.gen_lr, weight_decay=1e-4)
+        self.optm_gen = init_optimizer(self.gen_model, self.args, self.args.gen_lr)
 
     def fork_proto(self, protos):
         self.prototypes_global = protos
@@ -179,8 +188,8 @@ class Global_Node(object):
             in_channel = 3
             # self.model = init_model(self.args.global_model, args).to(self.device)
             self.model = Model.SimCLR(args, in_channel).to(self.device)
-        self.model_optimizer = optim.SGD(self.model.parameters(), lr=args.cls_lr, momentum=args.momentum, weight_decay=5e-4)
-        # self.model_optimizer = init_optimizer(self.model, self.args)
+        # self.model_optimizer = optim.SGD(self.model.parameters(), lr=args.cls_lr, momentum=args.momentum, weight_decay=5e-4)
+        self.model_optimizer = init_optimizer(self.model, args, args.cls_lr)
         self.test_data = test_data
         self.Dict = self.model.state_dict()
         afsche_global = optim.lr_scheduler.ReduceLROnPlateau(self.model_optimizer, factor=args.factor, patience=args.patience,
@@ -262,8 +271,8 @@ class Global_Node(object):
 
     def fork(self, node):
         self.model = copy.deepcopy(node.meme).to(self.device)
-        # self.model_optimizer = init_optimizer(self.model, self.args)
-        self.model_optimizer = optim.SGD(self.model.parameters(), lr=self.args.cls_lr, momentum=self.args.momentum, weight_decay=5e-4)
+        self.model_optimizer = init_optimizer(self.model, self.args, self.args.cls_lr)
+        # self.model_optimizer = optim.SGD(self.model.parameters(), lr=self.args.cls_lr, momentum=self.args.momentum, weight_decay=5e-4)
 
     # def fork_local(self, node):
     #     self.model = copy.deepcopy(node.model).to(self.device)

@@ -231,7 +231,7 @@ class AlexNet(nn.Module):
 
 
 class feature_extractor(nn.Module):
-    def __init__(self, optimizer,lr,momentum,weight_decay, num_classes=5,hidden_size=4096):
+    def __init__(self, optimizer, lr,momentum,weight_decay, num_classes=5,hidden_size=4096):
         super(feature_extractor,self).__init__()
         self.num_classes = num_classes
         self.features = nn.Sequential(OrderedDict([
@@ -266,7 +266,7 @@ class feature_extractor(nn.Module):
             ("drop7", nn.Dropout())
         ]))
 
-        # self.optimizer = optimizer(list(self.features.parameters())+list(self.classifier.parameters()), lr=lr, momentum=momentum, weight_decay=weight_decay)
+        self.optimizer = optimizer(list(self.features.parameters())+list(self.classifier.parameters()), lr=lr, momentum=momentum, weight_decay=weight_decay)
         self.initial_params()
 
     def initial_params(self):
@@ -302,8 +302,8 @@ class task_classifier(nn.Module):
         # self.task_classifier.add_module('t1_fc1', nn.Linear(hidden_size, hidden_size))
         # self.task_classifier.add_module('t1_relu', nn.ReLU())
         self.task_classifier.add_module('t1_fc2', nn.Linear(hidden_size, class_num))
-        # self.optimizer = optimizer(self.task_classifier.parameters(),
-        #                            lr=lr, momentum=momentum, weight_decay=weight_decay)
+        self.optimizer = optimizer(self.task_classifier.parameters(),
+                                   lr=lr, momentum=momentum, weight_decay=weight_decay)
         self.initialize_paras()
 
     # def initialize_paras(self):
@@ -399,23 +399,33 @@ class GeneratorFeature(nn.Module):
     def __init__(self, latent_space=10, num_classes=10, embedding_d=1024):
         super(GeneratorFeature, self).__init__()
         self.gen = nn.Sequential(
-            nn.Linear(latent_space+num_classes, 32),
+            nn.Linear(latent_space+num_classes, embedding_d//32),
             nn.ReLU(),
-            nn.Linear(32, 64),
-            nn.BatchNorm1d(64),
+            nn.Linear(embedding_d//32, embedding_d//16),
+            nn.BatchNorm1d(embedding_d//16),
             nn.ReLU(),
-            nn.Linear(64, 128),
-            nn.BatchNorm1d(128),
+            nn.Linear(embedding_d//16, embedding_d//8),
+            nn.BatchNorm1d(embedding_d//8),
             nn.ReLU(),
-            nn.Linear(128, 256),
-            nn.BatchNorm1d(256),
+            nn.Linear(embedding_d//8, embedding_d//4),
+            nn.BatchNorm1d(embedding_d//4),
             nn.ReLU(),
-            nn.Linear(256, 512),
-            nn.BatchNorm1d(512),
+            nn.Linear(embedding_d//4, embedding_d//2),
+            nn.BatchNorm1d(embedding_d//2),
             nn.ReLU(),
-            nn.Linear(512, embedding_d),
+            nn.Linear(embedding_d//2, embedding_d),
             nn.Tanh()
         )
+        self.initial_params()
+
+    def initial_params(self):
+        for layer in self.modules():
+            if isinstance(layer,torch.nn.Linear):
+                init.xavier_uniform_(layer.weight,0.1)
+                layer.bias.data.zero_()
+            elif isinstance(layer,torch.nn.BatchNorm2d) or isinstance(layer,torch.nn.BatchNorm1d):
+                layer.weight.data.fill_(1)
+                layer.bias.data.zero_()
 
     def forward(self, x, y):
         out = torch.cat((x, y), dim=1)

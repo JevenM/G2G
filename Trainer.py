@@ -395,6 +395,10 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
             loss_g = loss_gen1 + loss_gen + loss_cls
             # loss_g = loss_gen1 + loss_gen
             loss_g.backward()
+            # 梯度裁剪
+            torch.nn.utils.clip_grad_norm_(node.gen_model.parameters(), max_norm=1.0)
+            # 梯度值裁剪
+            # torch.nn.utils.clip_grad_value_(node.gen_model.parameters(), clip_value=0.5)
             node.optm_gen.step()
         # print(f'Epoch [{epoch+1}/10] [{i+1/str(gen_e)}], Loss: {loss.item()}, Loss Gen: {loss_gen.item()}')
         g_loss += loss_g.item()
@@ -567,7 +571,7 @@ def train_ssl(node, args, logger, round, sw=None):
             feature1, embeddings_orig, out_r = node.cl_model(real_images)
             # feature2, embeddings_gen, out_f = node.cl_model(fake_images.view(batchsize, in_c, w_h, w_h))
             ls_,ls_2,ou_loss_norm = 0.0, 0.0, 0.0
-            ou_loss_norm1  = 0.0
+            ou_loss_norm1 = 0.0
             if round > args.warm:#args.R / 2:
                 cc1 = torch.zeros(args.classes)
                 proto1 = torch.zeros(args.classes, dim).to(args.device)
@@ -601,6 +605,7 @@ def train_ssl(node, args, logger, round, sw=None):
                 else:
                     ou_loss_norm = Norm_(proto1, node.prototypes_global.detach())
                     ou_loss_norm1 = Norm_(proto2, node.prototypes_global.detach())
+
 
                 '''样本级别
                 feature1 = F.normalize(feature1, p=2, dim=1)
@@ -670,6 +675,7 @@ def train_ssl(node, args, logger, round, sw=None):
             # loss = ou_loss_norm + ou_loss_norm1 + loss_ce_true + ls_
             # loss = loss_ce_true + loss_ce_f + ou_loss_norm + ou_loss_norm1 + ls_ + ls_2
             loss = 0.1*loss_ce_true + ou_loss_norm + ls_ + ls_2 + ou_loss_norm1
+            # loss = 0.1*loss_ce_true + 5*ls_ + 5*ls_2 + ou_loss_norm1
         
             loss.backward()
             node.optm_cl.step()
