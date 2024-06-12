@@ -35,7 +35,7 @@ class Data(object):
             if iteration == 5:
                 client = [75, 0, 15, 30, 45, 60]
             if client is not None:
-                self.train_loader, self.test_loader,self.target_loader, self.classes, self.class_to_idx = get_rmnist_loaders(args,client,logger) 
+                self.train_loader, self.test_loader,self.target_loader, self.classes, self.class_to_idx = get_rmnist_loaders(args, client, logger) 
 
         if args.dataset == 'pacs':
             self.trainset, self.testset = None, None
@@ -48,7 +48,7 @@ class Data(object):
             if iteration == 3:
                 client=[ 'photo','cartoon','art_painting','sketch']
             if client is not None:
-                self.train_loader, self.test_loader,self.target_loader = get_pacs_loaders(args, client, logger) 
+                self.train_loader, self.test_loader, self.target_loader, self.classes, self.class_to_idx = get_pacs_loaders(args, client, logger) 
 
 
         if args.dataset == 'vlcs':
@@ -318,7 +318,7 @@ class Loader_dataset_pacs(data.Dataset):
 DATA_PATH = os.path.abspath("/data/mwj/data")
 
 def get_pacs_loaders(args, client, logger):
-    path_root = DATA_PATH+'/PACS/'
+    path_root = DATA_PATH+'/PACS_hdf5/'
     trans0 = transforms.Compose([transforms.RandomResizedCrop(222, scale=(0.7, 1.0)),
                                  transforms.RandomHorizontalFlip(),
                                  transforms.RandomGrayscale(),
@@ -338,9 +338,28 @@ def get_pacs_loaders(args, client, logger):
         valid_datas[i] = Loader_dataset_pacs(path=valid_path[i], tranforms=trans1)
         valid_loaders[i] = DataLoader(valid_datas[i], args.batch_size, True, num_workers=args.workers, pin_memory=args.pin)
     target_path = path_root + client[3] + '_test.hdf5'
+    logger.info(f"unseen domain: {client[3]}")
     target_data = Loader_dataset_pacs(target_path, trans1)
     target_loader = DataLoader(target_data, args.batch_size, True, num_workers=args.workers, pin_memory=args.pin)
-    return train_loaders, valid_loaders, target_loader
+    class_to_idx = {
+                    '0 - dog': 0,
+                    '1 - elephant': 1,
+                    '2 - giraffe': 2,
+                    '3 - guitar': 3,
+                    '4 - horse': 4,
+                    '5 - house': 5,
+                    '6 - person': 6,
+                }
+    classes = {
+                '0 - dog',
+                '1 - elephant',
+                '2 - giraffe',
+                '3 - guitar',
+                '4 - horse',
+                '5 - house',
+                '6 - person',
+            }
+    return train_loaders, valid_loaders, target_loader, classes, class_to_idx
 
 
 class PACS(Dataset):
@@ -412,7 +431,8 @@ class PACS(Dataset):
         return len(self.data)
 
 
-
+# 自己写的，参考https://blog.csdn.net/qq_43827595/article/details/121345640
+# 功能可以替代get_pacs_loaders，读取原始图像，划分训练集(0.8,0.2)
 def get_pacs_domain(args, domains, logger):
     root_path=f"{DATA_PATH}/PACS"
     transform = transforms.Compose([transforms.RandomResizedCrop(222, scale=(0.7, 1.0)),

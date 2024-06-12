@@ -73,6 +73,7 @@ for rounds in range(args.R):
     logger.info('===============The {:d}-th round==============='.format(rounds))
     # if args.lr_scheduler == True:
     #     LR_scheduler(rounds, Node_List, args, logger=logger)
+    
     is_continue = True
     for k in range(len(Node_List)):
         if args.algorithm != 'fed_adv': 
@@ -139,10 +140,11 @@ for rounds in range(args.R):
         Global_node.merge_weights_ssl(Node_List)
         recorder.server_test_on_target(Global_node, summary_writer, rounds)
     elif args.algorithm == 'fed_mutual':
-        logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))
+        # logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))
         recorder.server_test_on_target(Global_node, summary_writer, rounds)
     if rounds == args.R-1:
         dimension_reduction(Global_node, Data, rounds)
+
 recorder.finish()
 
 end_time = datetime.now()

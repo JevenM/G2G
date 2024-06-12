@@ -191,7 +191,7 @@ class Recorder(object):
                         output = node.model(data)
                 elif self.args.algorithm == 'fed_sr':
                     z = node.cl_model.featurize(data,num_samples=20)
-                    preds = torch.softmax(node.cl_model.prediction(z),dim=1)
+                    preds = torch.softmax(node.cl_model.cls(z),dim=1)
                     preds = preds.view([20,-1,node.args.classes]).mean(0)
                     output = torch.log(preds)
                 if isinstance(output, tuple) and self.args.algorithm == 'fed_adv':
@@ -290,7 +290,7 @@ class Recorder(object):
                     features, embed, outputs = output
                 elif self.args.algorithm == 'fed_sr':
                     z = node.cl_model.featurize(data,num_samples=20)
-                    preds = torch.softmax(node.cl_model.prediction(z),dim=1)
+                    preds = torch.softmax(node.cl_model.cls(z),dim=1)
                     preds = preds.view([20,-1,node.args.classes]).mean(0)
                     outputs = torch.log(preds)
                 
@@ -348,7 +348,7 @@ class Recorder(object):
                     z = node.model.featurize(data,num_samples=20)
                     # 1!!!!!!!!!!torch.Size([10240, 512])
                     # self.logger.info(f"1!!!!!!!!!!{z.shape}")
-                    preds = torch.softmax(node.model.prediction(z),dim=1)
+                    preds = torch.softmax(node.model.cls(z),dim=1)
                     # 2!!!!!!!!!!torch.Size([10240, 10])
                     # self.logger.info(f"2!!!!!!!!!!{preds.shape}")
                     preds = preds.view([20,-1,node.args.classes]).mean(0)
@@ -425,6 +425,7 @@ def dimension_reduction(node, Data, round):
             feature = model_trunc(images)['semantic_feature'].squeeze().flatten().detach().cpu().numpy() # 执行前向预测，得到 avgpool 层输出的语义特征
             encoding_array.append(feature)
         encoding_array = np.array(encoding_array)
+        print(f"labels_list: {labels_list}")
         if node.args.save_model:
             # 保存为本地的 npy 文件
             np.save(os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser源域{Data.client[node.num-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array)

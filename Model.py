@@ -399,21 +399,21 @@ class GeneratorFeature(nn.Module):
     def __init__(self, latent_space=10, num_classes=10, embedding_d=1024):
         super(GeneratorFeature, self).__init__()
         self.gen = nn.Sequential(
-            nn.Linear(latent_space+num_classes, embedding_d//32),
+            nn.Linear(latent_space+num_classes, 16),
             nn.ReLU(),
-            nn.Linear(embedding_d//32, embedding_d//16),
-            nn.BatchNorm1d(embedding_d//16),
+            nn.Linear(16, 32),
+            nn.BatchNorm1d(32),
             nn.ReLU(),
-            nn.Linear(embedding_d//16, embedding_d//8),
-            nn.BatchNorm1d(embedding_d//8),
+            nn.Linear(32, 64),
+            nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.Linear(embedding_d//8, embedding_d//4),
-            nn.BatchNorm1d(embedding_d//4),
+            nn.Linear(64, 128),
+            nn.BatchNorm1d(128),
             nn.ReLU(),
-            nn.Linear(embedding_d//4, embedding_d//2),
-            nn.BatchNorm1d(embedding_d//2),
+            nn.Linear(128, 256),
+            nn.BatchNorm1d(256),
             nn.ReLU(),
-            nn.Linear(embedding_d//2, embedding_d),
+            nn.Linear(256, embedding_d),
             nn.Tanh()
         )
         self.initial_params()
@@ -577,7 +577,7 @@ class SimCLR(nn.Module):
             )
             self.classifier = nn.Sequential(self.projection_head, self.prediction)
             # self.cls = nn.Linear(args.embedding_d, args.classes)
-            self.initial_params()
+            # self.initial_params()
         else:
             self.encoder = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec, args.classes)
             state_dict = torch.load("models/alexnet_caffe.pth.tar")
@@ -586,7 +586,7 @@ class SimCLR(nn.Module):
             self.encoder.load_state_dict(state_dict)
 
             self.projection_head = nn.Sequential(OrderedDict([
-                # ("1", nn.Linear(args.hidden_size, args.hidden_size//2)),
+                # ("1", nn.Linear(args.hidden_size, args.embedding_d)),
                 # ("relu6", nn.ReLU()),
                 # ("drop6", nn.Dropout()),
                 ("id", nn.Identity()),
@@ -596,9 +596,9 @@ class SimCLR(nn.Module):
             ]))
             self.prediction = task_classifier(args.hidden_size, optim.SGD, args.lr0, args.momentum, args.weight_dec,
                                                 class_num=args.classes)
-            # self.prediction = nn.Linear(args.hidden_size, args.classes)
+            self.cls = nn.Linear(args.embedding_d, args.classes)
             self.classifier = nn.Sequential(self.projection_head, self.prediction)
-    #     self.initial_params()
+        self.initial_params()
 
     def initial_params(self):
         for layer in self.modules():

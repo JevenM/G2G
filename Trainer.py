@@ -253,7 +253,7 @@ def train_fedsr(node, args, logger, round, sw = None, epo=None):
         # x, y = next(iter(loader))
         x, y = x.to(node.device), y.to(node.device)
         z, (z_mu,z_sigma) = node.cl_model.featurize(x,return_dist=True)
-        logits = node.cl_model.prediction(z)
+        logits = node.cl_model.cls(z)
         loss = F.cross_entropy(logits,y)
 
         obj = loss
@@ -600,11 +600,11 @@ def train_ssl(node, args, logger, round, sw=None):
                 proto1 = F.normalize(proto1, p=2, dim=1)
                 proto2 = F.normalize(proto2, p=2, dim=1)
                 if node.prototypes_global is None:
-                    ou_loss_norm = Norm_(proto1, node.prototypes.detach())
-                    ou_loss_norm1 = Norm_(proto2, node.prototypes.detach())
+                    ou_loss_norm = Norm_(proto1, node.prototypes)
+                    ou_loss_norm1 = Norm_(proto2, node.prototypes)
                 else:
-                    ou_loss_norm = Norm_(proto1, node.prototypes_global.detach())
-                    ou_loss_norm1 = Norm_(proto2, node.prototypes_global.detach())
+                    ou_loss_norm = Norm_(proto1, node.prototypes_global)
+                    ou_loss_norm1 = Norm_(proto2, node.prototypes_global)
 
 
                 '''样本级别
@@ -652,16 +652,16 @@ def train_ssl(node, args, logger, round, sw=None):
 
                     # 4. 创建索引张量 D，表示 B' 中每一行在原始张量 B 中的索引号
                     D = torch.arange(args.classes).repeat(args.classes)
-                    ls_ = ssl_loss(A_prime, B_prime.detach(), (C == D).float(), args.device)
+                    ls_ = ssl_loss(A_prime, B_prime, (C == D).float(), args.device)
                 # elif args.method == 'infonce':
                     # if node.prototypes_global is None:
                     #     ls_ = info_nce_loss(proto2, node.prototypes.detach())
                     # else:
                     #     ls_ = info_nce_loss(proto2, node.prototypes_global.detach())
                 if node.prototypes_global is None:
-                    ls_2 = info_nce_loss(proto2, node.prototypes.detach())
+                    ls_2 = info_nce_loss(proto2, node.prototypes)
                 else:
-                    ls_2 = info_nce_loss(proto2, node.prototypes_global.detach())
+                    ls_2 = info_nce_loss(proto2, node.prototypes_global)
                 running_loss_ssl += ls_.item()
                 running_loss_ssl2 += ls_2.item()
             
@@ -674,7 +674,7 @@ def train_ssl(node, args, logger, round, sw=None):
             # loss = ou_loss_f + loss_ce_f + loss_ce_true + ls_
             # loss = ou_loss_norm + ou_loss_norm1 + loss_ce_true + ls_
             # loss = loss_ce_true + loss_ce_f + ou_loss_norm + ou_loss_norm1 + ls_ + ls_2
-            loss = 0.1*loss_ce_true + ou_loss_norm + ls_ + ls_2 + ou_loss_norm1
+            loss = loss_ce_true + ou_loss_norm + ls_ + ls_2 + ou_loss_norm1
             # loss = 0.1*loss_ce_true + 5*ls_ + 5*ls_2 + ou_loss_norm1
         
             loss.backward()
