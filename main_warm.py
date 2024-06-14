@@ -93,8 +93,7 @@ for rounds in range(args.R):
             # train_classifier(Node_List[k], args, logger, rounds, summary_writer)
             recorder.validate(Node_List[k], summary_writer)
             # recorder.test_on_target(Node_List[k], summary_writer, rounds)
-        # elif args.algorithm == 'fed_mutual':
-        else:
+        elif args.algorithm == 'fed_mutual':
             recorder.printer(Node_List[k])
             Global_node.fork(Node_List[k])
             # print("##################################")
@@ -103,8 +102,9 @@ for rounds in range(args.R):
             recorder.printer(Global_node)
             recorder.validate(Node_List[k], summary_writer)
             # recorder.validate(Global_node, summary_writer)
-        # elif args.algorithm == 'fed_avg':
-            # recorder.validate(Node_List[k], summary_writer)
+        else:
+            recorder.printer(Node_List[k])
+            recorder.validate(Node_List[k], summary_writer)
             # recorder.test_on_target(Node_List[k], summary_writer, rounds)
         recorder.test_on_target(Node_List[k], summary_writer, rounds)
         if rounds == args.R-1:

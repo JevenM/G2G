@@ -210,13 +210,13 @@ class Recorder(object):
                     true_labels.extend(target.cpu().numpy())
                     pred_labels.extend(pred.cpu().numpy())
                     out_labels.extend(outd.cpu().numpy())
-                elif self.args.algorithm != 'fed_sr':
-                    total_loss += torch.nn.CrossEntropyLoss()(output[2], target)
-                    p = output[2].argmax(dim=1)
-                    correct += p.eq(target.view_as(p)).sum().item()
-                else:
+                elif self.args.algorithm == 'fed_sr':
                     total_loss += torch.nn.CrossEntropyLoss()(output, target)
                     p = output.argmax(dim=1)
+                    correct += p.eq(target.view_as(p)).sum().item()
+                else:
+                    total_loss += torch.nn.CrossEntropyLoss()(output[2], target)
+                    p = output[2].argmax(dim=1)
                     correct += p.eq(target.view_as(p)).sum().item()
 
             if true_labels != []:

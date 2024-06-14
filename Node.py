@@ -112,7 +112,7 @@ class Node(object):
         self.meme = Model.SimCLR(args, in_channel).to(self.device)
         # self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=args.cl_lr, weight_decay=1e-4)
         self.meme_optimizer = init_optimizer(self.meme, args, args.cl_lr)  
-        self.Dict = self.meme.state_dict()
+        # self.Dict = self.meme.state_dict()
 
         afsche_local = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=args.factor, patience=args.patience,
                                                           threshold=args.lr_threshold, min_lr=1e-7)
@@ -251,7 +251,10 @@ class Global_Node(object):
         # print(f"??????????????{Node_State_List[0].keys()}")
         for key in dict_1.keys():
             for i in range(len(Node_List)):
-                dict_1[key] += Node_State_List[i][key]
+                if i == 0:
+                    dict_1[key] = Node_State_List[i][key]
+                else:
+                    dict_1[key] += Node_State_List[i][key]
                 # dict_1[key] += (Node_State_List[i][key].float()*acc_list_norm[i]).long()
             dict_1[key] = dict_1[key]/len(Node_List)
         # print(f"self.Dict: {self.Dict}")

@@ -266,7 +266,7 @@ class feature_extractor(nn.Module):
             ("drop7", nn.Dropout())
         ]))
 
-        self.optimizer = optimizer(list(self.features.parameters())+list(self.classifier.parameters()), lr=lr, momentum=momentum, weight_decay=weight_decay)
+        # self.optimizer = optimizer(list(self.features.parameters())+list(self.classifier.parameters()), lr=lr, momentum=momentum, weight_decay=weight_decay)
         self.initial_params()
 
     def initial_params(self):
@@ -302,8 +302,7 @@ class task_classifier(nn.Module):
         # self.task_classifier.add_module('t1_fc1', nn.Linear(hidden_size, hidden_size))
         # self.task_classifier.add_module('t1_relu', nn.ReLU())
         self.task_classifier.add_module('t1_fc2', nn.Linear(hidden_size, class_num))
-        self.optimizer = optimizer(self.task_classifier.parameters(),
-                                   lr=lr, momentum=momentum, weight_decay=weight_decay)
+        # self.optimizer = optimizer(self.task_classifier.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
         self.initialize_paras()
 
     # def initialize_paras(self):
@@ -321,10 +320,13 @@ class task_classifier(nn.Module):
     #             layer.bias.data.zero_()
     def initialize_paras(self):
         for layer in self.modules():
-            if isinstance(layer,torch.nn.Conv2d):
-                init.kaiming_normal_(layer.weight,a=0,mode='fan-out')
-            elif isinstance(layer,torch.nn.Linear):
-                init.kaiming_normal_(layer.weight)
+            # if isinstance(layer,torch.nn.Conv2d):
+            #     init.kaiming_normal_(layer.weight,a=0,mode='fan_out')
+            # elif isinstance(layer,torch.nn.Linear):
+            #     init.kaiming_normal_(layer.weight)
+            if isinstance(layer,torch.nn.Linear) or isinstance(layer, nn.Linear):
+                init.xavier_uniform_(layer.weight,0.1)
+                layer.bias.data.zero_()
             elif isinstance(layer,torch.nn.BatchNorm2d) or isinstance(layer,torch.nn.BatchNorm1d):
                 layer.weight.data.fill_(1)
                 layer.bias.data.zero_()
@@ -577,7 +579,7 @@ class SimCLR(nn.Module):
             )
             self.classifier = nn.Sequential(self.projection_head, self.prediction)
             # self.cls = nn.Linear(args.embedding_d, args.classes)
-            # self.initial_params()
+            self.initial_params()
         else:
             self.encoder = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec, args.classes)
             state_dict = torch.load("models/alexnet_caffe.pth.tar")
@@ -586,23 +588,22 @@ class SimCLR(nn.Module):
             self.encoder.load_state_dict(state_dict)
 
             self.projection_head = nn.Sequential(OrderedDict([
-                # ("1", nn.Linear(args.hidden_size, args.embedding_d)),
-                # ("relu6", nn.ReLU()),
-                # ("drop6", nn.Dropout()),
-                ("id", nn.Identity()),
-                # ("4", nn.Linear(args.hidden_size//2, args.embedding_d)),
-                # ("relu7", nn.ReLU()),
-                # ("drop7", nn.Dropout())
+                ("1", nn.Linear(args.hidden_size, args.hidden_size//2)),
+                ("relu6", nn.ReLU()),
+                ("drop6", nn.Dropout()),
+                # ("id", nn.Identity()),
+                ("4", nn.Linear(args.hidden_size//2, args.hidden_size)),
+                ("relu7", nn.ReLU()),
+                ("drop7", nn.Dropout())
             ]))
             self.prediction = task_classifier(args.hidden_size, optim.SGD, args.lr0, args.momentum, args.weight_dec,
                                                 class_num=args.classes)
             self.cls = nn.Linear(args.embedding_d, args.classes)
             self.classifier = nn.Sequential(self.projection_head, self.prediction)
-        self.initial_params()
 
     def initial_params(self):
         for layer in self.modules():
-            if isinstance(layer,torch.nn.Linear):
+            if isinstance(layer,torch.nn.Linear) or isinstance(layer, nn.Linear):
                 init.xavier_uniform_(layer.weight,0.1)
                 layer.bias.data.zero_()
 

@@ -539,27 +539,6 @@ def train_ssl(node, args, logger, round, sw=None):
             labels = labels.to(node.device)
             node.optm_cl.zero_grad()
             
-            z = torch.randn(batchsize, args.latent_space).to(node.device)
-            # lab_ = torch.randint(0, 10, (batchsize,))
-            num_same = batchsize // 4
-            num_random = batchsize - num_same
-            lab_same = labels.cpu()[torch.randperm(batchsize)[:num_same]]
-            # 生成剩余 num_random 个随机元素
-            lab_random = torch.randint(0, args.classes, (num_random,))
-            # 将两部分拼接起来
-            lab_ = torch.cat((lab_same, lab_random))
-            # 打乱顺序
-            lab_ = lab_[torch.randperm(batchsize)]
-            # print(lab_, labels)
-            y = torch.eye(args.classes)[lab_].to(node.device)
-            # print(lab_[:10])
-            # y = torch.eye(args.classes)[labels].to(node.device)  # 将类别转换为one-hot编码
-            fake_images_f = node.gen_model(z, y).detach()
-            # fake_images = node.gen_model(real_images.view(batchsize, -1), y).detach()
-            # fake_images = gen(z)
-            # print(real_images.size())
-            # print(fake_images.size())
-            # 计算原图和生成图像的表征
             if args.dataset == 'rotatedmnist':
                 w_h = 28
                 in_c = 1
@@ -573,6 +552,26 @@ def train_ssl(node, args, logger, round, sw=None):
             ls_,ls_2,ou_loss_norm = 0.0, 0.0, 0.0
             ou_loss_norm1 = 0.0
             if round > args.warm:#args.R / 2:
+                z = torch.randn(batchsize, args.latent_space).to(node.device)
+                # lab_ = torch.randint(0, 10, (batchsize,))
+                num_same = batchsize // 4
+                num_random = batchsize - num_same
+                lab_same = labels.cpu()[torch.randperm(batchsize)[:num_same]]
+                # 生成剩余 num_random 个随机元素
+                lab_random = torch.randint(0, args.classes, (num_random,))
+                # 将两部分拼接起来
+                lab_ = torch.cat((lab_same, lab_random))
+                # 打乱顺序
+                lab_ = lab_[torch.randperm(batchsize)]
+                # print(lab_, labels)
+                y = torch.eye(args.classes)[lab_].to(node.device)
+                # print(lab_[:10])
+                # y = torch.eye(args.classes)[labels].to(node.device)  # 将类别转换为one-hot编码
+                fake_images_f = node.gen_model(z, y).detach()
+                # fake_images = node.gen_model(real_images.view(batchsize, -1), y).detach()
+                # fake_images = gen(z)
+                # print(real_images.size())
+                # print(fake_images.size())
                 cc1 = torch.zeros(args.classes)
                 proto1 = torch.zeros(args.classes, dim).to(args.device)
                 cc2 = torch.zeros(args.classes)
@@ -600,30 +599,12 @@ def train_ssl(node, args, logger, round, sw=None):
                 proto1 = F.normalize(proto1, p=2, dim=1)
                 proto2 = F.normalize(proto2, p=2, dim=1)
                 if node.prototypes_global is None:
-                    ou_loss_norm = Norm_(proto1, node.prototypes)
-                    ou_loss_norm1 = Norm_(proto2, node.prototypes)
+                    ou_loss_norm = Norm_(proto1, node.prototypes.detach())
+                    ou_loss_norm1 = Norm_(proto2, node.prototypes.detach())
                 else:
-                    ou_loss_norm = Norm_(proto1, node.prototypes_global)
-                    ou_loss_norm1 = Norm_(proto2, node.prototypes_global)
-
-
-                '''样本级别
-                feature1 = F.normalize(feature1, p=2, dim=1)
-                feature2 = F.normalize(feature2, p=2, dim=1)
-                if node.prototypes_global is None:
-                    node.prototypes = node.prototypes.detach()
-                    # pseudo_labels_f = compute_distances(feature2, node.prototypes)
-                    # cos_loss_f = KL_Loss(LogSoftmax(feature2), Softmax(node.prototypes[lab_].detach()))
-                    ou_loss_f1 = Norm_(feature2, node.prototypes[lab_].detach())
-                    ou_loss_f = Norm_(feature1, node.prototypes[labels].detach())
-                else:
-                    node.prototypes_global = node.prototypes_global.detach()
-                    # pseudo_labels_f = compute_distances(feature2, node.prototypes_global)
-                    # ou_loss_f = KL_Loss(LogSoftmax(feature2), Softmax(node.prototypes_global[lab_].detach()))
-                    ou_loss_f1 = Norm_(feature2, node.prototypes_global[lab_].detach())
-                    ou_loss_f = Norm_(feature1, node.prototypes_global[labels].detach())
-                '''
-                
+                    ou_loss_norm = Norm_(proto1, node.prototypes_global.detach())
+                    ou_loss_norm1 = Norm_(proto2, node.prototypes_global.detach())
+            
                 # pseudo_labels_f = pseudo_labels_f.detach()
                 # loss_ce_f = CE_Loss(out_f, pseudo_labels_f)  # 使用伪标签计算交叉熵损失
 
@@ -653,6 +634,7 @@ def train_ssl(node, args, logger, round, sw=None):
                     # 4. 创建索引张量 D，表示 B' 中每一行在原始张量 B 中的索引号
                     D = torch.arange(args.classes).repeat(args.classes)
                     ls_ = ssl_loss(A_prime, B_prime, (C == D).float(), args.device)
+                    running_loss_ssl += ls_.item()
                 # elif args.method == 'infonce':
                     # if node.prototypes_global is None:
                     #     ls_ = info_nce_loss(proto2, node.prototypes.detach())
@@ -662,7 +644,7 @@ def train_ssl(node, args, logger, round, sw=None):
                     ls_2 = info_nce_loss(proto2, node.prototypes)
                 else:
                     ls_2 = info_nce_loss(proto2, node.prototypes_global)
-                running_loss_ssl += ls_.item()
+                
                 running_loss_ssl2 += ls_2.item()
             
             loss_ce_true = CE_Loss(out_r, labels)  # 使用logits计算交叉熵损失
@@ -678,9 +660,11 @@ def train_ssl(node, args, logger, round, sw=None):
             # loss = 0.1*loss_ce_true + 5*ls_ + 5*ls_2 + ou_loss_norm1
         
             loss.backward()
-            node.optm_cl.step()
             nn.utils.clip_grad_norm_(node.cl_model.parameters(), max_norm=1.0)
+            node.optm_cl.step()
+            
             ls += loss.item()
+
         sw.add_scalar(f'Train-ssl/ce_t_loss/{node.num}', running_loss_ce_t / len(train_loader), round*args.simclr_e+k) # type: ignore
         sw.add_scalar(f'Train-ssl/sim_loss/{node.num}', running_ls_norm / len(train_loader), round*args.simclr_e+k) # type: ignore
         sw.add_scalar(f'Train-ssl/sim_loss1/{node.num}', running_ls_norm1 / len(train_loader), round*args.simclr_e+k) # type: ignore
