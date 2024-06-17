@@ -152,22 +152,13 @@ class Recorder(object):
 
     def validate(self, node, sw):
         self.counter += 1
-        # node.clser.to(node.device).eval()
-        if self.args.algorithm == 'fed_avg' or self.args.algorithm == 'fed_mutual':
+        if self.args.algorithm == 'fed_avg':
             if node.num != 0:
                 node.meme.to(node.device).eval()
             else:
                 node.model.to(node.device).eval()
-        elif self.args.algorithm == 'fed_adv':
-            if node.num != 0:
-                node.cl_model.to(node.device).eval()
-            else:
-                node.model.to(node.device).eval()
-        elif self.args.algorithm == 'fed_sr':
-            if node.num != 0:
-                node.cl_model.to(node.device).eval()
-            else:
-                node.model.to(node.device).eval()
+        else:
+            node.model.to(node.device).eval()
 
         total_loss = 0.0
         correct = 0.0
@@ -178,34 +169,28 @@ class Recorder(object):
         with torch.no_grad():
             for idx, (data, target) in enumerate(node.test_data):
                 data, target = data.to(node.device), target.to(node.device)
-                # output = node.clser(data)
-                if self.args.algorithm == 'fed_avg' or self.args.algorithm == 'fed_mutual':
+                output = FileNotFoundError
+                if self.args.algorithm == 'fed_avg':
                     if node.num != 0:
                         output = node.meme(data)
                     else:
                         output = node.model(data)
-                elif self.args.algorithm == 'fed_adv':
-                    if node.num != 0:
-                        output = node.cl_model(data)
-                    else:
-                        output = node.model(data)
+                elif self.args.algorithm == 'fed_adv' or self.args.algorithm == 'fed_mutual':
+                    output = node.model(data)
                 elif self.args.algorithm == 'fed_sr':
-                    z = node.cl_model.featurize(data,num_samples=20)
-                    preds = torch.softmax(node.cl_model.cls(z),dim=1)
-                    preds = preds.view([20,-1,node.args.classes]).mean(0)
-                    output = torch.log(preds)
+                    # z = node.model.featurize(data,num_samples=20)
+                    # preds = torch.softmax(node.model.cls(z),dim=1)
+                    # preds = preds.view([20,-1,node.args.classes]).mean(0)
+                    # output = torch.log(preds)
+                    output = node.model(data)
+
                 if isinstance(output, tuple) and self.args.algorithm == 'fed_adv':
-                    features, embed, outputs = output
+                    features, outputs = output
                     features = F.normalize(features, p=2, dim=1)
-                    # embed = F.normalize(embed, p=2, dim=1)
                     if node.prototypes_global is None:
                         pred = compute_distances(features, node.prototypes)
-                        # pred = compute_distances(embed, node.prototypes)
                     else:
                         pred = compute_distances(features, node.prototypes_global)
-                        # pred = compute_distances(embed, node.prototypes_global)
-                    # similarity_scores = torch.matmul(features, prototypes.t())  # 计算相似度(效果不如L2)
-                    # _, pred = torch.max(similarity_scores, dim=1)  # 选择最相似的类别作为预测标签
                     _, outd = torch.max(outputs, dim=1)
                     true_labels.extend(target.cpu().numpy())
                     pred_labels.extend(pred.cpu().numpy())
@@ -215,8 +200,8 @@ class Recorder(object):
                     p = output.argmax(dim=1)
                     correct += p.eq(target.view_as(p)).sum().item()
                 else:
-                    total_loss += torch.nn.CrossEntropyLoss()(output[2], target)
-                    p = output[2].argmax(dim=1)
+                    total_loss += torch.nn.CrossEntropyLoss()(output[1], target)
+                    p = output[1].argmax(dim=1)
                     correct += p.eq(target.view_as(p)).sum().item()
 
             if true_labels != []:
@@ -236,7 +221,7 @@ class Recorder(object):
             self.acc_best[node.num] = self.val_acc[str(node.num)][-1]
             if self.args.save_model:
                 # torch.save(node.clser.state_dict(), node.args.save_path+'/save/model/Node{:d}_{:s}_{:d}_{:s}.pt'.format(node.num, node.args.local_model, node.args.iteration, node.args.algorithm))
-                torch.save(node.cl_model.state_dict(), node.args.save_path+'/save/model/Node{:d}_{:s}_{:d}_{:s}.pt'.format(node.num, node.args.local_model, node.args.iteration, node.args.algorithm))
+                torch.save(node.model.state_dict(), node.args.save_path+'/save/model/Node{:d}_{:s}_{:d}_{:s}.pt'.format(node.num, node.args.local_model, node.args.iteration, node.args.algorithm))
             
             # add warm_up lr 
             if self.args.warm_up == True and str(node.num) != '0':
@@ -247,28 +232,17 @@ class Recorder(object):
         elif self.val_acc[str(node.num)][-1] <= self.acc_best[node.num]:
             self.logger.info('##### client{:d}: Not better Accuracy on S: {:.2f}%'.format(node.num, self.val_acc[str(node.num)][-1]))
 
-
-        # node.meme.to(node.device).eval()
-        # total_loss = 0.0
-        # correct = 0.0
-
-        # with torch.no_grad():
-        #     for idx, (data, target) in enumerate(node.test_data):
-        #         data, target = data.to(node.device), target.to(node.device)
-        #         output = node.meme(data)
-        #         total_loss += torch.nn.CrossEntropyLoss()(output, target)
-        #         pred = output.argmax(dim=1)
-        #         correct += pred.eq(target.view_as(pred)).sum().item()
-        #     total_loss = total_loss / (idx + 1)
-        #     acc = correct / len(node.test_data.dataset) * 100
     def test_on_target(self, node, sw, round):
-        if self.args.algorithm == 'fed_avg' or self.args.algorithm == 'fed_mutual':
+        if self.args.algorithm == 'fed_avg':
             if node.num != 0:
-                node.meme.to(node.device).eval()
+                node.meme.to(node.device)
+                node.meme.eval()
             else:
-                node.model.to(node.device).eval()
-        elif self.args.algorithm == 'fed_adv' or self.args.algorithm == 'fed_sr':
-            node.cl_model.to(node.device).eval()
+                node.model.to(node.device)
+                node.model.eval()
+        else:
+            node.model.to(node.device)
+            node.model.eval()
 
         true_labels = []
         pred_labels = []
@@ -278,43 +252,40 @@ class Recorder(object):
             accuracy1 = 0
             for idx, (data, target) in enumerate(node.target_loader):
                 data, target = data.to(node.device), target.to(node.device)
-
-                if self.args.algorithm == 'fed_avg' or self.args.algorithm == 'fed_mutual':
+                true_labels.extend(target.cpu().numpy())
+                outputs = None
+                if self.args.algorithm == 'fed_avg':
                     if node.num != 0:
                         output = node.meme(data)
                     else:
                         output = node.model(data)
-                    features, embed, outputs = output
-                elif self.args.algorithm == 'fed_adv':
-                    output = node.cl_model(data)
-                    features, embed, outputs = output
+                    features, outputs = output
                 elif self.args.algorithm == 'fed_sr':
-                    z = node.cl_model.featurize(data,num_samples=20)
-                    preds = torch.softmax(node.cl_model.cls(z),dim=1)
-                    preds = preds.view([20,-1,node.args.classes]).mean(0)
-                    outputs = torch.log(preds)
-                
-                true_labels.extend(target.cpu().numpy())
-                if self.args.algorithm == 'fed_adv':
+                    # z = node.model.featurize(data,num_samples=20)
+                    # preds = torch.softmax(node.model.cls(z),dim=1)
+                    # preds = preds.view([20,-1,node.args.classes]).mean(0)
+                    # outputs = torch.log(preds)
+                    outputs = node.model(data)
+                elif self.args.algorithm == 'fed_adv':
+                    output = node.model(data)
+                    features, outputs = output
                     features = F.normalize(features, p=2, dim=1)
-                    # embed = F.normalize(embed, p=2, dim=1)
                     if node.prototypes_global is None:
                         pred = compute_distances(features, node.prototypes)
-                        # pred = compute_distances(embed, node.prototypes)
                     else:
                         pred = compute_distances(features, node.prototypes_global)
-                        # pred = compute_distances(embed, node.prototypes_global)
                     pred_labels.extend(pred.cpu().numpy())
-                    
-                    
+                else:
+                    output = node.model(data)
+                    features, outputs = output
+                
                 # similarity_scores = torch.matmul(features, prototypes.t())  # 计算相似度(效果不如L2)
                 # _, pred = torch.max(similarity_scores, dim=1)  # 选择最相似的类别作为预测标签
                 _, outd = torch.max(outputs, dim=1)
                 out_labels.extend(outd.cpu().numpy())
-            
+
             accuracy2 = accuracy_score(true_labels, out_labels)
             self.logger.info(f'c{node.num} on Target: test Accuracy: {accuracy2}')
-            accuracy1 = 0.0
             if self.args.algorithm == 'fed_adv':
                 accuracy1 = accuracy_score(true_labels, pred_labels)
                 self.logger.info(f'c{node.num} on Target: pseudo Accuracy: {accuracy1}')
@@ -326,7 +297,8 @@ class Recorder(object):
 
     def server_test_on_target(self, node, sw, round):
         # node.num == 0
-        node.model.to(node.device).eval()
+        node.model.to(node.device)
+        node.model.eval()
         true_labels = []
         pred_labels = []
         out_labels = []
@@ -337,26 +309,25 @@ class Recorder(object):
                 data, target = data.to(node.device), target.to(node.device)
                 if self.args.algorithm != 'fed_sr':
                     output = node.model(data)
-                    feature, embed, outputs = output
+                    feature, outputs = output
                     if self.args.algorithm == 'fed_adv':
                         feature = F.normalize(feature, p=2, dim=1)
-                        # embed = F.normalize(embed, p=2, dim=1)
                         pred = compute_distances(feature, node.proto)
-                        # pred = compute_distances(embed, node.proto)
                         pred_labels.extend(pred.cpu().numpy())
                 else:
-                    z = node.model.featurize(data,num_samples=20)
+                    # z = node.model.featurize(data,num_samples=20)
                     # 1!!!!!!!!!!torch.Size([10240, 512])
                     # self.logger.info(f"1!!!!!!!!!!{z.shape}")
-                    preds = torch.softmax(node.model.cls(z),dim=1)
+                    # preds = torch.softmax(node.model.cls(z),dim=1)
                     # 2!!!!!!!!!!torch.Size([10240, 10])
                     # self.logger.info(f"2!!!!!!!!!!{preds.shape}")
-                    preds = preds.view([20,-1,node.args.classes]).mean(0)
+                    # preds = preds.view([20,-1,node.args.classes]).mean(0)
                     # 3!!!!!!!!!!torch.Size([512, 10])
                     # self.logger.info(f"3!!!!!!!!!!{preds.shape}")
-                    outputs = torch.log(preds)
+                    # outputs = torch.log(preds)
                     # 4!!!!!!!!!!torch.Size([512, 10])
                     # self.logger.info(f"4!!!!!!!!!!{outputs.shape}")
+                    outputs = node.model(data)
                 
                 _, outd = torch.max(outputs, dim=1)
                 true_labels.extend(target.cpu().numpy())
@@ -413,8 +384,9 @@ def dimension_reduction(node, Data, round):
     random.seed(1234)
     random.shuffle(marker_list)
     random.shuffle(palette)
+    node.model.eval()
     if node.num != 0:
-        model_trunc = create_feature_extractor(node.cl_model, return_nodes={'encoder': 'semantic_feature'})
+        model_trunc = create_feature_extractor(node.model, return_nodes={'net': 'semantic_feature'})
         #1 源域
         data_loader = torch.utils.data.DataLoader(node.test_data.dataset, batch_size=1, shuffle=False)
         encoding_array = []
@@ -461,11 +433,11 @@ def dimension_reduction(node, Data, round):
 
     if node.num == 0:
         node.model.eval()
-        model_trunc = create_feature_extractor(node.model, return_nodes={'encoder': 'semantic_feature'})
+        model_trunc = create_feature_extractor(node.model, return_nodes={'net': 'semantic_feature'})
         data_loader_t = torch.utils.data.DataLoader(node.test_data.dataset, batch_size=1, shuffle=False)
     else:
-        node.cl_model.eval()
-        model_trunc = create_feature_extractor(node.cl_model, return_nodes={'encoder': 'semantic_feature'})
+        node.model.eval()
+        model_trunc = create_feature_extractor(node.model, return_nodes={'net': 'semantic_feature'})
         #1 目标域
         data_loader_t = torch.utils.data.DataLoader(node.target_loader.dataset, batch_size=1, shuffle=False)
     encoding_array_ = []
@@ -521,12 +493,17 @@ def dimension_reduction(node, Data, round):
 
 # 计算距离矩阵
 def compute_distances(features, prototypes):
-    distances = torch.norm(torch.stack([f - prototypes for f in features]), dim=2)  
+    # print(features.shape)
+    # print(prototypes.shape)
+    distances = torch.norm(torch.stack([f - prototypes for f in features]), dim=2)
+    # print(distances.shape)
     # features = F.softmax(features, dim=1)
     # prototypes = F.softmax(prototypes, dim=1)
     # distances = torch.stack([F.kl_div(f.log(), prototypes, reduction='none').sum(dim=1) for f in features])
     
-    return torch.argmin(distances, dim=1)
+    res = torch.argmin(distances, dim=1)
+    # print(distances.shape)
+    return res
 
 def to_img(x, dataset):
     # from torchvision import transforms

@@ -2,13 +2,13 @@ import torch
 import h5py
 import os
 import numpy as np
+from PIL.Image import BICUBIC
 from PIL import Image,ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 from torch.utils import data
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split, TensorDataset
-from torchvision.transforms.functional import rotate
 from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import datasets, transforms
 from sklearn.model_selection import train_test_split
@@ -96,14 +96,8 @@ class MultipleEnvironmentMNIST(MultipleDomainDataset):
         if root is None:
             raise ValueError('Data directory not specified!')
 
-        # 定义数据变换
-        transform = transforms.Compose([
-            # transforms.RandomRotation(degrees=(0, 90)),  # 随机旋转-30到30度
-            transforms.ToTensor(),  # 转换为张量
-            transforms.Normalize((0.1307,), (0.3081,))  # 归一化
-        ])
-        original_dataset_tr = datasets.MNIST(root, train=True, download=False, transform=transform)
-        original_dataset_te = datasets.MNIST(root, train=False, download=False, transform=transform)
+        original_dataset_tr = datasets.MNIST(root, train=True, download=False)
+        original_dataset_te = datasets.MNIST(root, train=False, download=False)
 
         original_images = torch.cat((original_dataset_tr.data,
                                      original_dataset_te.data))
@@ -138,8 +132,58 @@ class RotatedMNIST(MultipleEnvironmentMNIST):
     def rotate_dataset(self, images, labels, angle):
         rotation = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.Lambda(lambda x: rotate(x, angle, fill=(0,))),
-                                            #    resample=Image.BICUBIC)),
+            transforms.Lambda(lambda x: x.rotate(angle, fill=(0,), resample=Image.BICUBIC)),
+            transforms.ToTensor()])
+
+        x = torch.zeros(len(images), 1, 28, 28)
+        for i in range(len(images)):
+            x[i] = rotation(images[i])
+
+        y = labels.view(-1)
+
+        return TensorDataset(x, y)
+
+class MultipleEnvironmentMNIST1000(MultipleDomainDataset):
+    def __init__(self, root, environments, dataset_transform, input_shape,
+                 num_classes, mnist_subset):
+        super().__init__()
+        if root is None:
+            raise ValueError('Data directory not specified!')
+
+        # mnist_subset = np.random.choice(10)
+        print('random select a batch of mnist_subset', mnist_subset)
+        indices = np.load(os.path.join('datasets/VLCS/dataset/supervised_inds_' + str(mnist_subset) + '.npy'))
+
+        original_dataset = datasets.MNIST(root, train=True, download=True)
+
+        original_images = original_dataset.data
+
+        original_labels = original_dataset.targets
+
+        original_images = original_images[indices]
+        original_labels = original_labels[indices]
+
+        self.datasets = []
+        self.classes = original_dataset.classes
+        self.class_to_idx = original_dataset.class_to_idx
+
+        for i in range(len(environments)):
+            self.datasets.append(dataset_transform(original_images, original_labels, environments[i]))
+
+        self.input_shape = input_shape
+        self.num_classes = num_classes
+
+
+
+class RotatedMNIST1000(MultipleEnvironmentMNIST1000):
+    def __init__(self, root, environments, mnist_subset):
+        super(RotatedMNIST1000, self).__init__(root, environments,
+                                           self.rotate_dataset, (1, 28, 28,), 10, mnist_subset)
+
+    def rotate_dataset(self, images, labels, angle):
+        rotation = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Lambda(lambda x: x.rotate(angle, fillcolor=(0,), resample=BICUBIC)),
             transforms.ToTensor()])
 
         x = torch.zeros(len(images), 1, 28, 28)
@@ -151,7 +195,8 @@ class RotatedMNIST(MultipleEnvironmentMNIST):
         return TensorDataset(x, y)
 
 
-class Loader_dataset(data.Dataset):
+
+class Loader_dataset(Dataset):
     def __init__(self, path, tranforms = None):
         self.path = path
         self.dataset = datasets.ImageFolder(path, transform=tranforms)
@@ -235,7 +280,8 @@ class UniqueLabelSampler(Sampler):
 '''
 
 def get_rmnist_loaders(args, client, logger):
-    data = eval("RotatedMNIST")(root="/data/mwj/data/", environments=client)
+    # 参考FedSR中所说，only 1000 images are rotated to form the domain
+    data = eval("RotatedMNIST1000")(root="/data/mwj/data/", environments=client, mnist_subset=args.mnist_subset)
     train_datas, train_loaders = {}, {}
     valid_datas, valid_loaders = {}, {}
     target_domain_idx = len(client)-1
@@ -257,7 +303,7 @@ def get_rmnist_loaders(args, client, logger):
         valid_loaders[s_domain_idx] = DataLoader(valid_datas[s_domain_idx], batch_size=args.batch_size, shuffle=False, num_workers=args.workers,pin_memory=args.pin)
 
     logger.info(f"unseen domain: {client[target_domain_idx]}")
-    target_data = data.datasets[target_domain_idx] #30度
+    target_data = data.datasets[target_domain_idx] 
     target_loader = DataLoader(target_data, batch_size=args.batch_size, shuffle=False, num_workers=args.workers,pin_memory=args.pin)
     # logger.info(f'client list: {client}')
     return train_loaders, valid_loaders, target_loader, data.classes, data.class_to_idx
@@ -296,7 +342,7 @@ def get_vlcs_loaders(args, client, logger):
     # logger.info(f'client list: {client}')
     return train_loaders, valid_loaders, target_loader, classes_name, class_to_idx
 
-class Loader_dataset_pacs(data.Dataset):
+class Loader_dataset_pacs(Dataset):
     def __init__(self, path, tranforms):
         self.path = path
         hdf = h5py.File(self.path, 'r')

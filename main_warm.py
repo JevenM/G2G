@@ -7,13 +7,14 @@ from Trainer import Trainer, train_ce, train_classifier, train_fc, train_ssl, tr
 from log import logger_config, set_random_seed
 from datetime import datetime
 import os
+import sys
 from torch.utils.tensorboard import SummaryWriter
 
 
 # init args
 args = args_parser()
 
-comments = f"{args.dataset}-r{args.R}-lr{args.lr}-le{args.E}-bs{args.batch_size}-alpha{args.alpha}-beta{args.beta}-it{args.iteration}-{args.algorithm}"
+comments = f"{args.dataset}-r{args.R}-le{args.E}-bs{args.batch_size}-it{args.iteration}-s{args.mnist_subset}-{args.algorithm}"
 print(comments)
 result_name = str(datetime.now()).split('.')[0].replace(" ", "_").replace(":", "_").replace("-", "_")+'_'+comments
 
@@ -51,10 +52,12 @@ logger = logger_config(log_path=log_name, logging_name=args.algorithm)
 args.device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
 logger.info(f'Running on {args.device}')
 logger.info(result_name)
+# 记录命令行参数
+logger.info('Command line: %s', ' '.join(sys.argv))
+
 exp_details(args, logger)
 
 Data = Data(args, logger)
-
 
 # init nodes
 Global_node = Global_Node(Data.target_loader, args)
@@ -97,8 +100,8 @@ for rounds in range(args.R):
             recorder.printer(Node_List[k])
             Global_node.fork(Node_List[k])
             # print("##################################")
-            # print(Node_List[k].cl_model.parameters())
-            # print(Node_List[k].cl_model.state_dict())
+            # print(Node_List[k].model.parameters())
+            # print(Node_List[k].model.state_dict())
             recorder.printer(Global_node)
             recorder.validate(Node_List[k], summary_writer)
             # recorder.validate(Global_node, summary_writer)

@@ -6,7 +6,7 @@ def args_parser():
 
     # Total
     parser.add_argument('--algorithm', type=str, default='fed_mutual',
-                        help='Type of algorithms:{fed_mutual, fed_avg, normal, fed_adv}')
+                        help='Type of algorithms:{fed_mutual, fed_sr, fed_avg, normal, fed_adv}')
     parser.add_argument('--method', type=str, default='simclr',
                         help='{simclr, simsiam}')
     parser.add_argument('--device', type=str, default='cuda:0',
@@ -24,9 +24,9 @@ def args_parser():
 
     # Model
     parser.add_argument('--global_model', type=str, default='ResNet50',
-                        help='Type of global model: {LeNet5, MLP, CNN2, ResNet50,ResNet18,VGG16,Alexnet,Alexnet2}')
+                        help='Type of global model: {LeNet5, MLP, SmallCNN, ResNet50,ResNet18,VGG16,Alexnet,Alexnet2}')
     parser.add_argument('--local_model', type=str, default='ResNet50',
-                        help='Type of local model: {LeNet5, MLP, CNN2, ResNet50,ResNet18,VGG16,Alexnet,Alexnet2}')
+                        help='Type of local model: {LeNet5, MLP, SmallCNN, ResNet50,ResNet18,VGG16,Alexnet,Alexnet2}')
     # parser.add_argument('--catfish', type=str, default=None,
     #                     help='Type of local model: {None, LeNet5, MLP, CNN2, ResNet50}')
     parser.add_argument('--discr_e', type=int, default=1,
@@ -38,10 +38,11 @@ def args_parser():
                         help='')
     parser.add_argument('--gen_lr', type=float, default=0.0002,
                         help='')
+    parser.add_argument('--mnist_subset', type=int, default=0,
+                        help='')
+    
     
     parser.add_argument('--simclr_e', type=int, default=10,
-                        help='')
-    parser.add_argument('--cl_lr', type=float, default=0.0002,
                         help='')
     
     parser.add_argument('--ce_epochs', type=int, default=30,
@@ -78,6 +79,7 @@ def args_parser():
     # Optima
     parser.add_argument('--optimizer', type=str, default='adam',
                         help='optimizer: {sgd, adam}')
+    # cl_lr
     parser.add_argument('--lr', type=float, default=0.0008,
                         help='learning rate')
     # parser.add_argument('--lr_step', type=int, default=10,

@@ -11,23 +11,9 @@ from torch.utils.data import Dataset, DataLoader
 
 kl_loss = KL_Loss(temperature=3)
 
-def init_model(model_type, args):
-    model = []
-    if model_type == 'LeNet5':
-        model = Model.LeNet5()
-    elif model_type == 'MLP':
-        model = Model.MLP()
-    elif model_type == 'ResNet50':
-        model = Model.ResNet50(args)
-    elif model_type == 'ResNet18':
-        model = Model.ResNet18(args)
-    elif model_type == 'VGG16':
-        model = Model.VGG16(args)
-    elif model_type == 'Alexnet':
-        model = Model.Alexnet(args)
-    elif model_type == 'CNN':
-        model = Model.CNN()
-    return model
+
+def get_model(model_type, args):
+    return Model.BaseModel(model_type, args) 
 
 
 def init_optimizer(model, args, in_lr):
@@ -49,71 +35,37 @@ def weights_zero(model):
 class Node(object):
     def __init__(self, num, train_data, test_data, args, target_load=None):
         self.args = args
+        # num == 0 是服务器
         self.num = num + 1
-        # 初始化原型矩阵
-        # if args.dataset == 'rotatedmnist':
-        #     dim = 1024
-        # else:
-        #     dim = 4096
         self.prototypes = None
         self.prototypes_global = None
-        # 统计每个类别的样本数量
-        # self.class_counts = torch.zeros(self.args.classes)
-        self.device = self.args.device
+        self.device = args.device
+
         self.train_data = train_data
         self.test_data = test_data
         self.target_loader = target_load
 
-        # self.model = init_model(self.args.local_model,args).to(self.device)
-        # self.optimizer = init_optimizer(self.model, self.args)
+        # 本地个性化模型
+        self.model = get_model(self.args.local_model, args).to(self.device)
+        self.optimizer = init_optimizer(self.model, args, args.lr)
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=25, gamma=0.99) # type: ignore
+        self.optm_fc = init_optimizer(self.model.cls, args, args.cls_lr)
 
-        if args.dataset == 'rotatedmnist':
-            # flatten_dim = 28*28
-            in_channel = 1
-            dim = 2*args.embedding_d
-        else:
-            # flatten_dim = 225*225*3
-            in_channel = 3
-            dim = args.hidden_size
-        self.model = Model.SimCLR(args, in_channel).to(self.device)
-        # self.optimizer = optim.Adam(self.model.parameters(), lr=args.cl_lr, weight_decay=1e-4)
-        self.optimizer = init_optimizer(self.model, args, args.cl_lr)
-        # self.gen_model = Model.Generator1(args.classes, flatten_dim).to(self.device)
-        # self.gen_model = Model.Generator(args.latent_space, args.classes, flatten_dim).to(self.device)
+        dim = self.model.out_dim
         self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, dim).to(self.device)
-        # self.optm_gen = optim.Adam(self.gen_model.parameters(), lr=args.gen_lr, weight_decay=1e-4)
         self.optm_gen = init_optimizer(self.gen_model, args, args.gen_lr)
         
-        if args.method == 'simsiam':
-            self.cl_model = SimSiam(in_channel).to(self.device)
-        else:
-            self.cl_model = Model.SimCLR(args, in_channel).to(self.device)
-        # self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=args.cl_lr, weight_decay=1e-4)
-        # self.optm_fc = optim.Adam(self.cl_model.classifier.parameters(), lr=args.cls_lr, weight_decay=1e-4)
-        self.optm_cl = init_optimizer(self.cl_model, args, args.cl_lr)
-        self.optm_fc = init_optimizer(self.cl_model.classifier, args, args.cls_lr)
-        self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=10, gamma=0.99)
         # 判断是否是真样本
-        # self.disc_model = Model.Discriminator(flatten_dim, args.classes).to(self.device)
         self.disc_model = Model.DiscriminatorFeature(dim, args.classes).to(self.device)
-        # self.optm_disc = optim.Adam(self.disc_model.parameters(), lr=args.disc_lr, weight_decay=1e-4)
         self.optm_disc = init_optimizer(self.disc_model, args, args.disc_lr)
         # 判断是否是目标域
-        # self.disc_model2 = Model.Discriminator2(flatten_dim).to(self.device)
         self.disc_model2 = Model.DiscriminatorFeature2(dim).to(self.device)
-        # self.optm_disc2 = optim.Adam(self.disc_model2.parameters(), lr=args.disc_lr, weight_decay=1e-4)
         self.optm_disc2 = init_optimizer(self.disc_model2, args, args.disc_lr)
 
-        # self.clser = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
-        # self.optm_cls = optim.Adam(self.clser.fc.parameters(), lr=args.cls_lr, weight_decay=1e-4)
-        # self.meme = init_model(self.args.global_model,args).to(self.device)
-        # self.meme_optimizer = init_optimizer(self.meme, self.args)
-        # if args.algorithm != 'fed_adv':
-        self.meme = Model.SimCLR(args, in_channel).to(self.device)
-        # self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=args.cl_lr, weight_decay=1e-4)
-        self.meme_optimizer = init_optimizer(self.meme, args, args.cl_lr)  
-        # self.Dict = self.meme.state_dict()
-
+        # 本地之间流通的全局模型
+        self.meme = get_model(self.args.global_model, args).to(self.device)
+        self.meme_optimizer = init_optimizer(self.meme, args, args.lr)
+        
         afsche_local = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=args.factor, patience=args.patience,
                                                           threshold=args.lr_threshold, min_lr=1e-7)
         self.sche_local = GradualWarmupScheduler(self.optimizer, total_epoch=args.ite_warmup,
@@ -129,23 +81,19 @@ class Node(object):
             self.r_mu = nn.Parameter(torch.zeros(args.classes,args.embedding_d, device=self.device))
             self.r_sigma = nn.Parameter(torch.ones(args.classes,args.embedding_d, device=self.device))
             self.C = nn.Parameter(torch.ones([], device=self.device))
-            self.optm_cl.add_param_group({'params':[self.r_mu,self.r_sigma,self.C],'lr':args.cl_lr,'momentum':0.9})
+            self.optimizer.add_param_group({'params':[self.r_mu,self.r_sigma,self.C],'lr':args.lr,'momentum':0.9})
 
 
     def fork(self, global_node):
         self.meme = copy.deepcopy(global_node.model).to(self.device)
-        self.meme_optimizer = init_optimizer(self.meme, self.args, self.args.cl_lr)
-        # self.meme_optimizer = optim.Adam(self.meme.parameters(), lr=self.args.cl_lr, weight_decay=1e-4)
+        self.meme_optimizer = init_optimizer(self.meme, self.args, self.args.lr)
 
     def local_fork_ssl(self, global_model):
         # print(f"global: {global_model.model.state_dict()}")
-        # self.clser.load_state_dict(global_model.model.state_dict())
-        self.cl_model = copy.deepcopy(global_model.model)
-        # self.optm_cl = optim.Adam(self.cl_model.parameters(), lr=self.args.cl_lr, weight_decay=1e-4)
-        self.optm_cl = init_optimizer(self.cl_model, self.args, self.args.cl_lr)
-        self.ssl_scheduler = optim.lr_scheduler.StepLR(self.optm_cl, step_size=10, gamma=0.99)
-        # self.optm_fc = optim.Adam(self.cl_model.classifier.parameters(), lr=self.args.cls_lr, weight_decay=1e-4)
-        self.optm_fc = init_optimizer(self.cl_model.classifier, self.args, self.args.cls_lr)
+        self.model = copy.deepcopy(global_model.model)
+        self.optimizer = init_optimizer(self.model, self.args, self.args.lr)
+        # self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=0.99)
+        self.optm_fc = init_optimizer(self.model.cls, self.args, self.args.cls_lr)
 
     def local_fork_gen(self, global_model):
         # print(f"global: {global_model.model.state_dict()}")
@@ -163,34 +111,14 @@ class Global_Node(object):
         self.args = args
         self.device = self.args.device
         self.proto = None
-        if args.dataset == 'rotatedmnist':
-            dim = 2*args.embedding_d
-        else:
-            dim = args.hidden_size
-        # self.synthesis_train_dataset = None
-        # self.synthesis_train_loader = None
-        self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, dim).to(self.device)
-        if args.dataset == 'rotatedmnist':
-            in_channel = 1
-            # self.gen_model = Model.Generator(args.latent_space, args.classes, 28*28).to(self.device)
-            # self.gen_model = Model.Generator1(args.classes).to(self.device)
-            if args.method == 'simsiam':
-                self.model = SimSiam(in_channel).to(self.device)
-            else:
-                self.model = Model.SimCLR(args, in_channel).to(self.device)
-            
-            # self.model = Model.Classifier(args, self.cl_model, args.classes).to(self.device)
-            # self.optm_cls = optim.Adam(self.model.fc.parameters(), lr=args.cls_lr, weight_decay=1e-4)
-            # self.model = Model.SimCLR(args, in_channel).to(self.device)
-            # self.optm_ssl = optim.SGD(self.model.parameters(), lr=args.cls_lr, momentum=args.momentum, weight_decay=5e-4)
-            
-        else:
-            in_channel = 3
-            # self.model = init_model(self.args.global_model, args).to(self.device)
-            self.model = Model.SimCLR(args, in_channel).to(self.device)
-        # self.model_optimizer = optim.SGD(self.model.parameters(), lr=args.cls_lr, momentum=args.momentum, weight_decay=5e-4)
-        self.model_optimizer = init_optimizer(self.model, args, args.cls_lr)
         self.test_data = test_data
+
+        self.model = get_model(self.args.global_model, args).to(self.device)
+        self.model_optimizer = init_optimizer(self.model, args, args.lr)
+
+        dim = self.model.out_dim
+        self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, dim).to(self.device)
+
         self.Dict = self.model.state_dict()
         afsche_global = optim.lr_scheduler.ReduceLROnPlateau(self.model_optimizer, factor=args.factor, patience=args.patience,
                                                           threshold=args.lr_threshold, min_lr=1e-7)
@@ -204,51 +132,36 @@ class Global_Node(object):
         Node_State_List = [copy.deepcopy(Node_List[i].meme.state_dict()) for i in range(len(Node_List))]
         for key in self.Dict.keys():
             for i in range(len(Node_List)):
-                self.Dict[key] += Node_State_List[i][key]
+                if i == 0:
+                    self.Dict[key] = Node_State_List[i][key]
+                else:
+                    self.Dict[key] += Node_State_List[i][key]
             self.Dict[key] = self.Dict[key]/len(Node_List)
         self.model.load_state_dict(self.Dict)
 
     def merge_weights_gen(self, Node_List, acc_list):
         # 归一化
         # acc_list_norm = [float(acc) / sum(acc_list) for acc in acc_list]
-
         weights_zero(self.gen_model)
         # FedAvg，每个node的meme和global model的结构一样
         Node_State_List_ = [copy.deepcopy(Node_List[i].gen_model.state_dict()) for i in range(len(Node_List))]
         dict_ = self.gen_model.state_dict()
         for key in dict_.keys():
             for i in range(len(Node_List)):
-                dict_[key] += Node_State_List_[i][key]
+                if i == 0:
+                    dict_[key] = Node_State_List_[i][key]
+                else:
+                    dict_[key] += Node_State_List_[i][key]
             dict_[key] = dict_[key]/len(Node_List)
         # print(f"simclr Dict: {dict_}")
         self.gen_model.load_state_dict(dict_) 
 
-        # self.synthesis_train_dataset = SampleGenerator(1000, self.args.latent_space, [Node_i.gen_model for Node_i in Node_List], 10, self.args.device)
-        # self.synthesis_train_loader = DataLoader(self.synthesis_train_dataset, batch_size=128, shuffle=False)
-
-
-        '''
-        # class 模型清零
-        weights_zero(self.model)
-        # FedAvg，每个node的meme和global model的结构一样
-        Node_State_List = [copy.deepcopy(Node_List[i].clser.state_dict()) for i in range(len(Node_List))]
-        dict_1 = self.model.state_dict()
-        for key in dict_1.keys():
-            for i in range(len(Node_List)):
-                dict_1[key] += Node_State_List[i][key]
-                # dict_1[key] += (Node_State_List[i][key].float()*acc_list_norm[i]).long()
-            dict_1[key] = dict_1[key]/len(Node_List)
-        # print(f"self.Dict: {self.Dict}")
-        self.model.load_state_dict(dict_1)
-        '''
     def merge_weights_ssl(self, Node_List, acc_list=[]):
         # acc_list_norm = [float(acc) / sum(acc_list) for acc in acc_list]
         weights_zero(self.model)
         # FedAvg，每个node的meme和global model的结构一样
-        Node_State_List = [copy.deepcopy(Node_List[i].cl_model.state_dict()) for i in range(len(Node_List))]
+        Node_State_List = [copy.deepcopy(Node_List[i].model.state_dict()) for i in range(len(Node_List))]
         dict_1 = self.model.state_dict()
-        # print(f"!!!!!!!!!!!!!!{dict_1.keys()}")
-        # print(f"??????????????{Node_State_List[0].keys()}")
         for key in dict_1.keys():
             for i in range(len(Node_List)):
                 if i == 0:
@@ -267,19 +180,12 @@ class Global_Node(object):
         # 沿着指定的维度求平均值
         average_tensor = torch.mean(stacked_tensor, dim=0)
         print(average_tensor.shape)
-        # L2 归一化
-        # average_tensor = F.normalize(average_tensor, p=2, dim=1)
         self.proto = average_tensor
         return average_tensor
 
     def fork(self, node):
         self.model = copy.deepcopy(node.meme).to(self.device)
-        self.model_optimizer = init_optimizer(self.model, self.args, self.args.cls_lr)
-        # self.model_optimizer = optim.SGD(self.model.parameters(), lr=self.args.cls_lr, momentum=self.args.momentum, weight_decay=5e-4)
-
-    # def fork_local(self, node):
-    #     self.model = copy.deepcopy(node.model).to(self.device)
-    #     self.model_optimizer = init_optimizer(self.model, self.args)
+        self.model_optimizer = init_optimizer(self.model, self.args, self.args.lr)
 
     def train(self, round, logger, sw):
         self.model.train()
@@ -314,6 +220,7 @@ class Global_Node(object):
             for idx, (images, labels) in enumerate(self.test_data):
             # for idx, (images, labels) in enumerate(self.synthesis_train_loader):
                 # 将输入数据移动到指定设备上
+                self.model_optimizer.zero_grad()
                 images = images.to(self.device)
                 labels = labels.to(self.device)
                 labels = labels.detach()
@@ -326,12 +233,12 @@ class Global_Node(object):
                 # fake_imgs = self.gen_model(z_, y_).detach()
                 # features_f, outputs_f = self.model(fake_imgs.view(64, 1, 28, 28))
                 # loss_ce = nn.CrossEntropyLoss()(outputs_f, y_)  # 使用logits计算交叉熵损失
-                features, embeds, outputs = self.model(images.view(images.size(0), 1, 28, 28).detach())
+                features, _ = self.model(images)
                 # pseudo_labels = compute_distances(features, self.proto)
                 temp = self.proto[labels].detach()
                 loss = kl_loss(features, temp)
                 loss.backward()
-                self.optm_ssl.step()
+                self.model_optimizer.step()
                 total_loss += loss.item()
                 num += 1
 

@@ -50,13 +50,11 @@ pymao main_warm.py --node_num 3  --device cuda:1 --dataset vlcs --classes 5 --lr
 #### RotatedMNIST
 
 ```
-pymao main_warm.py --node_num 5  --device cuda:0 --dataset rotatedmnist --classes 10 --lr 0.0008 --global_model Alexnet --local_model Alexnet --algorithm fed_adv --cls_epochs 1  --R 50 --E 3 --pretrained True --batch_size 64 --iteration 0 --optimizer adam
+pymao main_warm.py --node_num 5 --device cuda:0 --dataset rotatedmnist --classes 10 --lr 0.001 --global_model SmallCNN --local_model SmallCNN --algorithm fed_mutual --R 60 --E 5 --pretrained True --batch_size 512 --iteration 5 --method ssl --simclr_e 10 --gen_e 2 --discr_e 2 --disc_lr 0.001 --gen_lr 0.001 --cls_epochs 10 --cls_lr 0.001 --ce_epochs 10 --warm 0 --mnist_subset 5
 ```
 
-
-```
-pymao main_warm.py --node_num 5  --device cuda:0 --dataset rotatedmnist --classes 10 --lr 0.0008 --global_model Alexnet --local_model Alexnet --algorithm fed_mutual --R 60 --E 1 --pretrained True --batch_size 512 --iteration 4 --cls_epochs 10 --discr_e 2 --gen_e 2 --cl_lr 0.001 --cls_lr 0.001 --disc_lr 0.001 --gen_lr 0.001 --simclr_e 10 --method ssl --cls_epochs 10 --cls_lr 0.001 --optimizer adam
-```
+20240614新版
+pymao main_warm.py --node_num 5  --device cuda:0 --dataset rotatedmnist --classes 10 --lr 0.01 --global_model SmallCNN --local_model SmallCNN --algorithm fed_adv --R 100 --E 5  --batch_size 512 --iteration 1 --method ssl --simclr_e 10 --gen_e 2 --discr_e 2 --disc_lr 0.001 --gen_lr 0.001 --cls_epochs 10 --cls_lr 0.001 --ce_epochs 100
 
 
 #### PACS
