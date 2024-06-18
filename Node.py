@@ -46,24 +46,24 @@ class Node(object):
         self.target_loader = target_load
 
         # 本地个性化模型
-        self.model = get_model(self.args.local_model, args).to(self.device)
+        self.model = get_model(self.args.local_model, args)
         self.optimizer = init_optimizer(self.model, args, args.lr)
         # self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=25, gamma=0.99) # type: ignore
         self.optm_fc = init_optimizer(self.model.cls, args, args.cls_lr)
 
         dim = self.model.out_dim
-        self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, dim).to(self.device)
+        self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, dim)
         self.optm_gen = init_optimizer(self.gen_model, args, args.gen_lr)
         
         # 判断是否是真样本
-        self.disc_model = Model.DiscriminatorFeature(dim, args.classes).to(self.device)
+        self.disc_model = Model.DiscriminatorFeature(dim, args.classes)
         self.optm_disc = init_optimizer(self.disc_model, args, args.disc_lr)
         # 判断是否是目标域
-        self.disc_model2 = Model.DiscriminatorFeature2(dim).to(self.device)
+        self.disc_model2 = Model.DiscriminatorFeature2(dim)
         self.optm_disc2 = init_optimizer(self.disc_model2, args, args.disc_lr)
 
         # 本地之间流通的全局模型
-        self.meme = get_model(self.args.global_model, args).to(self.device)
+        self.meme = get_model(self.args.global_model, args)
         self.meme_optimizer = init_optimizer(self.meme, args, args.lr)
         
         afsche_local = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=args.factor, patience=args.patience,
@@ -85,7 +85,7 @@ class Node(object):
 
 
     def fork(self, global_node):
-        self.meme = copy.deepcopy(global_node.model).to(self.device)
+        self.meme = copy.deepcopy(global_node.model)
         self.meme_optimizer = init_optimizer(self.meme, self.args, self.args.lr)
 
     def local_fork_ssl(self, global_model):
@@ -113,11 +113,11 @@ class Global_Node(object):
         self.proto = None
         self.test_data = test_data
 
-        self.model = get_model(self.args.global_model, args).to(self.device)
+        self.model = get_model(self.args.global_model, args)
         self.model_optimizer = init_optimizer(self.model, args, args.lr)
 
         dim = self.model.out_dim
-        self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, dim).to(self.device)
+        self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, dim)
 
         self.Dict = self.model.state_dict()
         afsche_global = optim.lr_scheduler.ReduceLROnPlateau(self.model_optimizer, factor=args.factor, patience=args.patience,

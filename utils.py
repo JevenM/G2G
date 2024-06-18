@@ -169,7 +169,7 @@ class Recorder(object):
         with torch.no_grad():
             for idx, (data, target) in enumerate(node.test_data):
                 data, target = data.to(node.device), target.to(node.device)
-                output = FileNotFoundError
+                output = None
                 if self.args.algorithm == 'fed_avg':
                     if node.num != 0:
                         output = node.meme(data)
@@ -188,12 +188,12 @@ class Recorder(object):
                     features, outputs = output
                     features = F.normalize(features, p=2, dim=1)
                     if node.prototypes_global is None:
-                        pred = compute_distances(features, node.prototypes)
+                        pred = compute_distances(features.cpu(), node.prototypes)
                     else:
-                        pred = compute_distances(features, node.prototypes_global)
+                        pred = compute_distances(features.cpu(), node.prototypes_global)
                     _, outd = torch.max(outputs, dim=1)
                     true_labels.extend(target.cpu().numpy())
-                    pred_labels.extend(pred.cpu().numpy())
+                    pred_labels.extend(pred.numpy())
                     out_labels.extend(outd.cpu().numpy())
                 elif self.args.algorithm == 'fed_sr':
                     total_loss += torch.nn.CrossEntropyLoss()(output, target)
@@ -271,10 +271,10 @@ class Recorder(object):
                     features, outputs = output
                     features = F.normalize(features, p=2, dim=1)
                     if node.prototypes_global is None:
-                        pred = compute_distances(features, node.prototypes)
+                        pred = compute_distances(features.cpu(), node.prototypes)
                     else:
-                        pred = compute_distances(features, node.prototypes_global)
-                    pred_labels.extend(pred.cpu().numpy())
+                        pred = compute_distances(features.cpu(), node.prototypes_global)
+                    pred_labels.extend(pred.numpy())
                 else:
                     output = node.model(data)
                     features, outputs = output
@@ -311,9 +311,9 @@ class Recorder(object):
                     output = node.model(data)
                     feature, outputs = output
                     if self.args.algorithm == 'fed_adv':
-                        feature = F.normalize(feature, p=2, dim=1)
+                        feature = F.normalize(feature.cpu(), p=2, dim=1)
                         pred = compute_distances(feature, node.proto)
-                        pred_labels.extend(pred.cpu().numpy())
+                        pred_labels.extend(pred.numpy())
                 else:
                     # z = node.model.featurize(data,num_samples=20)
                     # 1!!!!!!!!!!torch.Size([10240, 512])

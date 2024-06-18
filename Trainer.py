@@ -730,7 +730,7 @@ def train_ce(node, args, logger, round, sw=None):
 
     class_counts = torch.zeros(args.classes)
     dim = node.model.out_dim
-    prototypes = torch.zeros(args.classes, dim).to(args.device)
+    prototypes = torch.zeros(args.classes, dim)
 
     for k in trange(args.ce_epochs):
         running_loss_ce_t = 0.0
@@ -768,10 +768,10 @@ def train_ce(node, args, logger, round, sw=None):
         sw.add_scalar(f'Test-ce/loss/{node.num}', loss_test, round*args.ce_epochs+k) # type: ignore
 
     node.model.eval()
+    model = node.model.cpu()
     
     for images, labels in train_loader:
-        images = images.to(node.device)
-        feature, _ = node.model(images)
+        feature, _ = model(images)
         for i in range(args.classes):  # 遍历每个类别
             class_indices = (labels == i)  # 找到属于当前类别的样本的索引
             class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
@@ -787,6 +787,8 @@ def train_ce(node, args, logger, round, sw=None):
 
     # logger.info(f"Prototypes computed successfully! {node.prototypes}")
     node.prototypes = prototypes
+    # 清理缓存
+    torch.cuda.empty_cache()
 
 
 def train_ssl1(node, args, logger, round, sw=None):

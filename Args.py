@@ -19,7 +19,7 @@ def args_parser():
                         help='Number of local epochs: E')
     parser.add_argument('--notes', type=str, default='',
                         help='Notes of Experiments')
-    parser.add_argument('--pin', type=bool, default=False,
+    parser.add_argument('--pin', default=False, action='store_true',
                         help='pin-memory')
 
     # Model
@@ -55,7 +55,7 @@ def args_parser():
                         help='')
     parser.add_argument('--latent_space', type=int, default=64,
                         help='')
-    parser.add_argument('--save_model', type=bool, default=False,
+    parser.add_argument('--save_model', default=False, action='store_true',
                         help='')
     parser.add_argument('--warm', type=int, default=10, 
                         help='number of epochs to want before ssl (10)')
@@ -71,7 +71,7 @@ def args_parser():
                         help='data split')
     parser.add_argument('--val_ratio', type=float, default=0.1,
                         help='val_ratio')
-    parser.add_argument('--all_data', type=bool, default=True,
+    parser.add_argument('--all_data', default=False, action='store_true',
                         help='use all train_set')
     parser.add_argument('--classes', type=int, default=7,
                         help='classes')
@@ -94,8 +94,7 @@ def args_parser():
                         help='meme ratio of data loss')
     parser.add_argument('--workers', type=int, default=16,
                         help='num_workers')                    
-    parser.add_argument('--pretrained',type=bool,
-                        default=True)
+    parser.add_argument('--pretrained', default=False, action='store_true')
     parser.add_argument('--factor', type=float, default=0.1, 
                         help='lr decreased factor (0.1)')
     parser.add_argument('--patience', type=int, default=20, 
