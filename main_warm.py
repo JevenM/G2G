@@ -14,6 +14,11 @@ from torch.utils.tensorboard import SummaryWriter
 # init args
 args = args_parser()
 
+
+for name in args.__dict__:
+    if getattr(args,name) in ['True','False','None']:
+        setattr(args,name,eval(getattr(args,name)))
+
 comments = f"{args.dataset}-r{args.R}-le{args.E}-bs{args.batch_size}-it{args.iteration}-s{args.mnist_subset}-{args.algorithm}"
 print(comments)
 result_name = str(datetime.now()).split('.')[0].replace(" ", "_").replace(":", "_").replace("-", "_")+'_'+comments

@@ -665,11 +665,11 @@ def train_ssl(node, args, logger, round, sw=None):
         sw.add_scalar(f'Train-ssl/loss/{node.num}', ls / len(train_loader), round*args.simclr_e+k) # type: ignore
         logger.info('Epoch [%d/%d], node %d: Loss_ce_t: %.4f, Loss_sim: %.4f, Loss_sim1: %.4f, Loss_ce_f: %.4f, Loss_ssl: %.4f, Loss_ssl: %.4f, total loss: %.4f' % (k+1, args.simclr_e, node.num, running_loss_ce_t / len(train_loader), running_ls_norm / len(train_loader), running_ls_norm1 / len(train_loader), running_loss_ce_f / len(train_loader), running_loss_ssl / len(train_loader), running_loss_ssl2 / len(train_loader), ls/len(train_loader))) # type: ignore
 
-        # 更新学习率
-        node.scheduler.step()
-        # 打印当前学习率
-        current_lr = node.optimizer.param_groups[0]['lr']
-        logger.info(f'Epoch {round*args.simclr_e+k}/{args.R*args.simclr_e}, Learning Rate: {current_lr}')
+        # # 更新学习率
+        # node.scheduler.step()
+        # # 打印当前学习率
+        # current_lr = node.optimizer.param_groups[0]['lr']
+        # logger.info(f'Epoch {round*args.simclr_e+k}/{args.R*args.simclr_e}, Learning Rate: {current_lr}')
 
     node.model.eval()
     # 训练完encoder之后
@@ -769,7 +769,7 @@ def train_ce(node, args, logger, round, sw=None):
 
     node.model.eval()
     
-    for images, labels in node.train_data:
+    for images, labels in train_loader:
         images = images.to(node.device)
         feature, _ = node.model(images)
         for i in range(args.classes):  # 遍历每个类别
@@ -812,11 +812,11 @@ def train_ssl1(node, args, logger, round, sw=None):
         sw.add_scalar(f'Train-ssl/ce_t_loss/{node.num}', running_loss_ce_t / len(train_loader), round*args.simclr_e+k) # type: ignore
         logger.info('Epoch [%d/%d], node %d: Loss_ce_t: %.4f' % (k+1, args.simclr_e, node.num, running_loss_ce_t / len(train_loader))) # type: ignore
 
-        # 更新学习率
-        node.scheduler.step()
-        # 打印当前学习率
-        current_lr = node.optimizer.param_groups[0]['lr']
-        logger.info(f'Epoch {round*args.simclr_e+k}/{args.R*args.simclr_e}, Learning Rate: {current_lr}')
+        # # 更新学习率
+        # node.scheduler.step()
+        # # 打印当前学习率
+        # current_lr = node.optimizer.param_groups[0]['lr']
+        # logger.info(f'Epoch {round*args.simclr_e+k}/{args.R*args.simclr_e}, Learning Rate: {current_lr}')
 
     node.model.eval()
     # 训练完encoder之后

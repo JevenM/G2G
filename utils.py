@@ -224,7 +224,7 @@ class Recorder(object):
                 torch.save(node.model.state_dict(), node.args.save_path+'/save/model/Node{:d}_{:s}_{:d}_{:s}.pt'.format(node.num, node.args.local_model, node.args.iteration, node.args.algorithm))
             
             # add warm_up lr 
-            if self.args.warm_up == True and str(node.num) != '0':
+            if self.args.warm_up == True and str(node.num) != '0' and self.args.algorithm == 'fed_mutual':
                 node.sche_local.step(metrics=self.val_acc[str(node.num)][-1])
                 node.sche_meme.step(metrics=self.val_acc[str(node.num)][-1])
             self.logger.info('##### client{:d}: Better Accuracy on S: {:.2f}%'.format(node.num, self.val_acc[str(node.num)][-1]))

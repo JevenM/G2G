@@ -19,7 +19,7 @@ def get_model(model_type, args):
 def init_optimizer(model, args, in_lr):
     optimizer = []
     if args.optimizer == 'sgd':
-        optimizer = torch.optim.SGD(model.parameters(), lr=in_lr, momentum=args.momentum, weight_decay=5e-4)
+        optimizer = torch.optim.SGD(model.parameters(), lr=in_lr, momentum=args.momentum, weight_decay=1e-7)
     elif args.optimizer == 'adam':
         optimizer = torch.optim.Adam(model.parameters(), lr=in_lr, weight_decay=1e-4)
     return optimizer
@@ -48,7 +48,7 @@ class Node(object):
         # 本地个性化模型
         self.model = get_model(self.args.local_model, args).to(self.device)
         self.optimizer = init_optimizer(self.model, args, args.lr)
-        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=25, gamma=0.99) # type: ignore
+        # self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=25, gamma=0.99) # type: ignore
         self.optm_fc = init_optimizer(self.model.cls, args, args.cls_lr)
 
         dim = self.model.out_dim

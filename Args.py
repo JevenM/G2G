@@ -19,7 +19,7 @@ def args_parser():
                         help='Number of local epochs: E')
     parser.add_argument('--notes', type=str, default='',
                         help='Notes of Experiments')
-    parser.add_argument('--pin', type=bool, default=True,
+    parser.add_argument('--pin', type=bool, default=False,
                         help='pin-memory')
 
     # Model
