@@ -51,16 +51,43 @@ class Node(object):
         # self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=25, gamma=0.99) # type: ignore
         self.optm_fc = init_optimizer(self.model.cls, args, args.cls_lr)
 
-        dim = self.model.out_dim
-        self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, dim)
-        self.optm_gen = init_optimizer(self.gen_model, args, args.gen_lr)
+        if args.algorithm == 'fed_adv':
+            dim = self.model.out_dim
+            self.gen_model = Model.GeneratorFeature(args.latent_space, args.classes, dim)
+            self.optm_gen = init_optimizer(self.gen_model, args, args.gen_lr)
         
-        # 判断是否是真样本
-        self.disc_model = Model.DiscriminatorFeature(dim, args.classes)
-        self.optm_disc = init_optimizer(self.disc_model, args, args.disc_lr)
-        # 判断是否是目标域
-        self.disc_model2 = Model.DiscriminatorFeature2(dim)
-        self.optm_disc2 = init_optimizer(self.disc_model2, args, args.disc_lr)
+            # 判断是否是真样本
+            self.disc_model = Model.DiscriminatorFeature(dim, args.classes)
+            self.optm_disc = init_optimizer(self.disc_model, args, args.disc_lr)
+            # 判断是否是目标域
+            self.disc_model2 = Model.DiscriminatorFeature2(dim)
+            self.optm_disc2 = init_optimizer(self.disc_model2, args, args.disc_lr)
+
+        if args.algorithm == 'fed_adg':
+            noise_dim = 10
+            self.G = nn.Sequential(
+                    nn.Linear(noise_dim, args.embedding_d//8),
+                    nn.BatchNorm1d(args.embedding_d//8),
+                    nn.ReLU(),
+                    nn.Linear(args.embedding_d//8,args.embedding_d//4),
+                    nn.BatchNorm1d(args.embedding_d//4),
+                    nn.ReLU(),
+                    nn.Linear(args.embedding_d//4,args.embedding_d//2),
+                    nn.BatchNorm1d(args.embedding_d//2),
+                    nn.ReLU(),
+                    nn.Linear(args.embedding_d//2,args.embedding_d),
+                    )
+            self.optimizer.add_param_group({'params':self.G.parameters(),'lr':args.lr,'momentum':0.9})
+
+            self.D = nn.Sequential(
+                    nn.Linear(args.embedding_d,args.embedding_d//8),
+                    nn.BatchNorm1d(args.embedding_d//8),
+                    nn.ReLU(),
+                    nn.Linear(args.embedding_d//8,1),
+                    nn.Sigmoid(),
+                    )
+
+            self.D_optim = init_optimizer(self.D, args, args.lr)
 
         # 本地之间流通的全局模型
         self.meme = get_model(self.args.global_model, args)

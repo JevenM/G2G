@@ -384,6 +384,7 @@ def dimension_reduction(node, Data, round):
     random.seed(1234)
     random.shuffle(marker_list)
     random.shuffle(palette)
+    node.model.to(node.device)
     node.model.eval()
     if node.num != 0:
         model_trunc = create_feature_extractor(node.model, return_nodes={'net': 'semantic_feature'})
@@ -432,11 +433,9 @@ def dimension_reduction(node, Data, round):
             plt.savefig(dim_reduc_save_path, dpi=300, bbox_inches='tight') # 保存图像
 
     if node.num == 0:
-        node.model.eval()
         model_trunc = create_feature_extractor(node.model, return_nodes={'net': 'semantic_feature'})
         data_loader_t = torch.utils.data.DataLoader(node.test_data.dataset, batch_size=1, shuffle=False)
     else:
-        node.model.eval()
         model_trunc = create_feature_extractor(node.model, return_nodes={'net': 'semantic_feature'})
         #1 目标域
         data_loader_t = torch.utils.data.DataLoader(node.target_loader.dataset, batch_size=1, shuffle=False)

@@ -19,7 +19,7 @@ def args_parser():
                         help='Number of local epochs: E')
     parser.add_argument('--notes', type=str, default='',
                         help='Notes of Experiments')
-    parser.add_argument('--pin', default=False, action='store_true',
+    parser.add_argument('--pin', default=True, action='store_true',
                         help='pin-memory')
 
     # Model
@@ -94,7 +94,7 @@ def args_parser():
                         help='meme ratio of data loss')
     parser.add_argument('--workers', type=int, default=16,
                         help='num_workers')                    
-    parser.add_argument('--pretrained', default=False, action='store_true')
+    parser.add_argument('--pretrained', default=True, action='store_true')
     parser.add_argument('--factor', type=float, default=0.1, 
                         help='lr decreased factor (0.1)')
     parser.add_argument('--patience', type=int, default=20, 

@@ -88,7 +88,7 @@ for rounds in range(args.R):
             Node_List[k].fork(Global_node)
         
             for epoch in range(args.E):
-                Train(Node_List[k],args,logger,rounds,summary_writer, epoch)
+                Train(Node_List[k], args, logger, rounds, summary_writer, epoch)
 
         if args.algorithm == 'fed_adv' and rounds == 0:
             train_ce(Node_List[k], args, logger, rounds, summary_writer)
@@ -144,7 +144,7 @@ for rounds in range(args.R):
     elif args.algorithm == 'fed_avg':
         Global_node.merge(Node_List)
         recorder.server_test_on_target(Global_node, summary_writer, rounds)
-    elif args.algorithm == 'fed_sr':
+    elif args.algorithm == 'fed_sr' or args.algorithm == 'fed_adg':
         Global_node.merge_weights_ssl(Node_List)
         recorder.server_test_on_target(Global_node, summary_writer, rounds)
     elif args.algorithm == 'fed_mutual':

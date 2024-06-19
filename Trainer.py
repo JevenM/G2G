@@ -242,6 +242,7 @@ def NT_XentLoss(z1, z2, temperature=0.5):
 
 def train_fedsr(node, args, logger, round, sw = None, epo=None):
     node.model.train()
+    node.model.to(node.device)
     lossMeter = AverageMeter()
     accMeter = AverageMeter()
     regL2RMeter = AverageMeter()
@@ -298,7 +299,57 @@ def train_fedsr(node, args, logger, round, sw = None, epo=None):
     sw.add_scalar(f'Train-sr/neg/{node.num}', regNegEntMeter.average(), round*args.E+epo) # type: ignore
     logger.info(f'train acc: {accMeter.average()}, loss: {lossMeter.average()}, regL2R: {regL2RMeter.average()}, regCMI: {regCMIMeter.average()}, regNegEnt: {regNegEntMeter.average()}')
 
+# 来自FedSR
+def train_fedadg(node, args, logger, round, sw = None, epo=None):
+    node.model.train()
+    node.model.to(node.device)
+    lossMeter = AverageMeter()
+    accMeter = AverageMeter()
+    DlossMeter = AverageMeter()
+    DaccMeter = AverageMeter()
+    for _, (x, y) in enumerate(tqdm(node.train_data)):
+    # for step in range(steps):
+        # x, y = next(iter(loader))
+        x, y = x.to(node.device), y.to(node.device)
+        z, logits = node.model(x)
+        loss = F.cross_entropy(logits, y)
 
+        noise = torch.rand([x.shape[0], 10]).to(node.device)
+        z_fake = node.G(noise)
+
+        D_inp = torch.cat([z_fake,z])
+        D_target = torch.cat([torch.zeros([x.shape[0],1]),torch.ones([x.shape[0],1])]).to(node.device)
+        
+        # Train D
+        D_out = node.D(D_inp.detach())
+        D_loss = ((D_target-D_out)**2).mean()
+
+        node.D_optim.zero_grad()
+        D_loss.backward()
+        node.D_optim.step()
+
+        # Train Net
+        D_out = node.D(D_inp)
+        D_loss_g = -((D_target-D_out)**2).mean()
+        obj = loss + D_loss_g
+
+        node.optimizer.zero_grad()
+        obj.backward()
+        node.optimizer.step()
+
+
+        acc = (logits.argmax(1)==y).float().mean()
+        D_acc = ((D_out>0.5).long() == D_target).float().mean()
+        lossMeter.update(loss.data,x.shape[0])
+        accMeter.update(acc.data,x.shape[0])
+        DlossMeter.update(D_loss.data,x.shape[0])
+        DaccMeter.update(D_acc.data,x.shape[0])
+
+    sw.add_scalar(f'Train-adg/acc/{node.num}', accMeter.average(), round*args.E+epo) # type: ignore
+    sw.add_scalar(f'Train-adg/loss/{node.num}', lossMeter.average(), round*args.E+epo) # type: ignore
+    sw.add_scalar(f'Train-adg/dacc/{node.num}', DaccMeter.average(), round*args.E+epo) # type: ignore
+    sw.add_scalar(f'Train-adg/dloss/{node.num}', DlossMeter.average(), round*args.E+epo) # type: ignore
+    logger.info(f'acc: {accMeter.average()}, loss: {lossMeter.average()}, Dacc: {DaccMeter.average()}, Dloss: {DlossMeter.average()}')
 
 def train_adv(node, args, logger, round, sw = None, epo=None):
     node.gen_model.to(node.device).train()
@@ -436,15 +487,17 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
         torch.save(node.gen_model.state_dict(), gen_save_path)
 
     node.model.eval()
+    model = node.model.cpu()
     # 训练完encoder之后
     class_counts = torch.zeros(args.classes)
     dim = node.model.out_dim
     with torch.no_grad():
-        prototypes = torch.zeros(args.classes, dim).to(args.device)
+        prototypes = torch.zeros(args.classes, dim)
         # 遍历整个数据集
         for images, labels in node.train_data:
-            images = images.to(node.device)
-            feature, out = node.model(images)
+            # images = images.to(node.device)
+            feature, out = model(images)
+            # feature = feature.cpu()
             for i in range(args.classes):  # 遍历每个类别
                 class_indices = (labels == i)  # 找到属于当前类别的样本的索引
                 class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
@@ -474,7 +527,6 @@ def csa_loss(x, y, class_eq, device):
 def ssl_loss(x, y, class_eq, device):
     margin = 1
     dist = F.pairwise_distance(x, y)
-    class_eq = class_eq.to(device)
     loss = class_eq * dist.pow(2)
     loss += (1 - class_eq) * (margin - dist).clamp(min=0).pow(2)
     return loss.mean()
@@ -536,6 +588,7 @@ def train_ssl(node, args, logger, round, sw=None):
             node.optimizer.zero_grad()
             
             feature1, out_r = node.model(real_images)
+            feature1 = feature1.cpu()
             ls_,ls_2,ou_loss_norm = 0.0, 0.0, 0.0
             ou_loss_norm1, loss_ce_f = 0.0, 0.0
             if round > args.warm:#args.R / 2:
@@ -560,18 +613,19 @@ def train_ssl(node, args, logger, round, sw=None):
                 # print(real_images.size())
                 # print(fake_images.size())
                 cc1 = torch.zeros(args.classes)
-                proto1 = torch.zeros(args.classes, dim).to(args.device)
+                proto1 = torch.zeros(args.classes, dim)
                 cc2 = torch.zeros(args.classes)
-                proto2 = torch.zeros(args.classes, dim).to(args.device)
+                proto2 = torch.zeros(args.classes, dim)
                 # 遍历z1对应的label
                 for i in range(args.classes):  # 遍历每个类别
                     class_ind = (labels == i)  # 找到属于当前类别的样本的索引
-                    class_outputs = feature1[class_ind]  # 提取属于当前类别的样本的特征向量
+                    class_outputs = feature1[class_ind.cpu()]  # 提取属于当前类别的样本的特征向量
                     # class_outputs = embeddings_orig[class_ind]  # 提取属于当前类别的样本的特征向量
                     proto1[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
                     cc1[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
                     class_ind2 = (lab_ == i)  # 找到属于当前类别的样本的索引
-                    class_outputs2 = fake_images_f[class_ind2]  # 提取属于当前类别的样本的特征向量
+                    fake_images_f_cpu = fake_images_f.cpu()
+                    class_outputs2 = fake_images_f_cpu[class_ind2.cpu()]  # 提取属于当前类别的样本的特征向量
                     # class_outputs2 = embeddings_gen[class_ind2]  # 提取属于当前类别的样本的特征向量
                     proto2[i] += torch.sum(class_outputs2, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
                     cc2[i] += class_outputs2.shape[0]  # 统计当前类别的样本数量
@@ -672,15 +726,16 @@ def train_ssl(node, args, logger, round, sw=None):
         # logger.info(f'Epoch {round*args.simclr_e+k}/{args.R*args.simclr_e}, Learning Rate: {current_lr}')
 
     node.model.eval()
+    model = node.model.cpu()
     # 训练完encoder之后
     class_counts = torch.zeros(args.classes)
     with torch.no_grad():
-        prototypes = torch.zeros(args.classes, dim).to(args.device)
+        prototypes = torch.zeros(args.classes, dim)
         # 遍历整个数据集
         for images, labels in node.train_data:
-            images = images.to(node.device)
-            feature, out = node.model(images)
-            # feature = feature.cpu().detach()
+            # images = images.to(node.device)
+            feature, _ = model(images)
+            # feature = feature.cpu()
             for i in range(args.classes):  # 遍历每个类别
                 class_indices = (labels == i)  # 找到属于当前类别的样本的索引
                 class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
@@ -771,7 +826,9 @@ def train_ce(node, args, logger, round, sw=None):
     model = node.model.cpu()
     
     for images, labels in train_loader:
+        # images = images.to(node.device)
         feature, _ = model(images)
+        # feature = feature.cpu()
         for i in range(args.classes):  # 遍历每个类别
             class_indices = (labels == i)  # 找到属于当前类别的样本的索引
             class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
@@ -821,15 +878,17 @@ def train_ssl1(node, args, logger, round, sw=None):
         # logger.info(f'Epoch {round*args.simclr_e+k}/{args.R*args.simclr_e}, Learning Rate: {current_lr}')
 
     node.model.eval()
+    model = node.model.cpu()
     # 训练完encoder之后
     class_counts = torch.zeros(args.classes)
     dim = node.model.out_dim
-    prototypes = torch.zeros(args.classes, dim).to(args.device)
+    prototypes = torch.zeros(args.classes, dim)
 
     # 遍历整个数据集
     for images, labels in node.train_data:
-        images = images.to(node.device)
-        feature, _ = node.model(images)
+        # images = images.to(node.device)
+        feature, _ = model(images)
+        # feature = feature.cpu()
         for i in range(args.classes):  # 遍历每个类别
             class_indices = (labels == i)  # 找到属于当前类别的样本的索引
             class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
