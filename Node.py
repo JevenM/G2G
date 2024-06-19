@@ -77,6 +77,7 @@ class Node(object):
                     nn.ReLU(),
                     nn.Linear(args.embedding_d//2,args.embedding_d),
                     )
+            self.G.to(self.device)
             self.optimizer.add_param_group({'params':self.G.parameters(),'lr':args.lr,'momentum':0.9})
 
             self.D = nn.Sequential(
@@ -86,6 +87,7 @@ class Node(object):
                     nn.Linear(args.embedding_d//8,1),
                     nn.Sigmoid(),
                     )
+            self.D.to(self.device)
 
             self.D_optim = init_optimizer(self.D, args, args.lr)
 

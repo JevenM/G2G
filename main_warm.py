@@ -116,7 +116,10 @@ for rounds in range(args.R):
             # recorder.test_on_target(Node_List[k], summary_writer, rounds)
         recorder.test_on_target(Node_List[k], summary_writer, rounds)
         if rounds == args.R-1:
-            dimension_reduction(Node_List[k], Data, rounds)
+            try:
+                dimension_reduction(Node_List[k], Data, rounds)
+            except Exception as e:
+                logger.info(f"An error occurred: {e}")
     
     if args.algorithm == 'fed_adv' and is_continue:
         acc_list = []
@@ -151,10 +154,11 @@ for rounds in range(args.R):
         # logger.info("iteration:{},epoch:{},accurancy:{},loss:{}".format(args.iteration, rounds, recorder.log(Global_node)[0], recorder.log(Global_node)[1]))
         recorder.server_test_on_target(Global_node, summary_writer, rounds)
     if rounds == args.R-1:
-        dimension_reduction(Global_node, Data, rounds)
-
+        try:
+            dimension_reduction(Global_node, Data, rounds)
+        except Exception as e:
+            logger.info(f"An error occurred: {e}")
 recorder.finish()
-
 end_time = datetime.now()
 h_, remainder_ = divmod((end_time - start_time).seconds, 3600)
 m_, s_ = divmod(remainder_, 60)

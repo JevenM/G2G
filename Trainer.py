@@ -207,6 +207,8 @@ class Trainer(object):
             self.train = train_normal
         elif args.algorithm == 'fed_adv':
             self.train = train_adv
+        elif args.algorithm == 'fed_adg':
+            self.train = train_fedadg
         elif args.algorithm == 'fed_sr':
             self.train = train_fedsr
 

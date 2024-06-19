@@ -175,7 +175,7 @@ class Recorder(object):
                         output = node.meme(data)
                     else:
                         output = node.model(data)
-                elif self.args.algorithm == 'fed_adv' or self.args.algorithm == 'fed_mutual':
+                elif self.args.algorithm == 'fed_adv' or self.args.algorithm == 'fed_mutual' or self.args.algorithm == 'fed_adg':
                     output = node.model(data)
                 elif self.args.algorithm == 'fed_sr':
                     # z = node.model.featurize(data,num_samples=20)
