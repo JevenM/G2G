@@ -360,10 +360,10 @@ class BaseModel(nn.Module):
             # weights=AlexNet_Weights.IMAGENET1K_V1
             net = models.alexnet(pretrained=args.pretrained)
             net.classifier[6] = nn.Linear(net.classifier[6].in_features,self.out_dim)
-        elif model_type == 'ResNet18':
+        elif model_type == 'Resnet18':
             net = models.resnet18(pretrained=args.pretrained)
             net.fc = nn.Linear(net.fc.in_features,self.out_dim)
-        elif model_type == 'ResNet50':
+        elif model_type == 'Resnet50':
             net = models.resnet50(pretrained=args.pretrained)
             net.fc = nn.Linear(net.fc.in_features,self.out_dim)
         else:
