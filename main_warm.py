@@ -14,7 +14,6 @@ from torch.utils.tensorboard import SummaryWriter
 # init args
 args = args_parser()
 
-
 for name in args.__dict__:
     if getattr(args,name) in ['True','False','None']:
         setattr(args,name,eval(getattr(args,name)))
@@ -26,10 +25,7 @@ result_name = str(datetime.now()).split('.')[0].replace(" ", "_").replace(":", "
 curr_dir = './runs/' + result_name
 if not os.path.exists(curr_dir):
     os.makedirs(curr_dir)
-
 summary_writer = SummaryWriter(log_dir=curr_dir, comment=comments)
-
-
 
 # curr_working_dir = os.getcwd()
 save_dir = os.path.join('./logger/', result_name)
@@ -37,7 +33,6 @@ if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 
 args.save_path = save_dir
-
 images_path = os.path.join(save_dir, 'gen_images')
 log_name = os.path.join(save_dir, 'train.log')
 if not os.path.exists(images_path):
@@ -50,9 +45,6 @@ save_record_path = os.path.join(save_dir, 'save/record')
 if not os.path.exists(save_record_path):
     os.makedirs(save_record_path)
 
-
-
-date_t = str(datetime.now()).split('.')[0].replace(" ", "_").replace(":", "_").replace("-", "_")
 logger = logger_config(log_path=log_name, logging_name=args.algorithm)
 args.device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
 logger.info(f'Running on {args.device}')
@@ -61,32 +53,33 @@ logger.info(result_name)
 logger.info('Command line: %s', ' '.join(sys.argv))
 
 exp_details(args, logger)
+Summary(args, logger)
 
+# ------------------------------------------------------------- begin ----------------------------------------------------------------
+# load data
 Data = Data(args, logger)
-
 # init nodes
 Global_node = Global_Node(Data.target_loader, args)
+# create node list
 Node_List = [Node(k, Data.train_loader[k], Data.test_loader[k], args, Data.target_loader) for k in range(args.node_num)]
+# init server's model and optimizer
 # Catfish(Node_List, args)
 logger.info(f"Node_list.size = {len(Node_List)}")
 
+# data recoder
 recorder = Recorder(args,logger)
-Summary(args, logger)
-# start
+
 Train = Trainer(args)
 
 start_time = datetime.now()
-
 for rounds in range(args.R):
     logger.info('===============The {:d}-th round==============='.format(rounds))
     # if args.lr_scheduler == True:
     #     LR_scheduler(rounds, Node_List, args, logger=logger)
-    
     is_continue = True
     for k in range(len(Node_List)):
         if args.algorithm != 'fed_adv': 
             Node_List[k].fork(Global_node)
-        
             for epoch in range(args.E):
                 Train(Node_List[k], args, logger, rounds, summary_writer, epoch)
 
