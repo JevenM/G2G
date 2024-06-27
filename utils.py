@@ -551,7 +551,7 @@ def Summary(args, logger):
     logger.info("lr:{}, is pretrained:{}".format(args.lr, args.pretrained))
     logger.info("dataset:{}\tbatchsize:{}\tclasses:{}".format(args.dataset, args.batch_size, args.classes))
     logger.info("node_num:{},\tsplit:{}".format(args.node_num, args.split))
-    # print("iid:{},\tequal:{},\n".format(args.iid == 1, args.unequal == 0))
+    logger.info("iid:{}".format(args.iid == 1))
     logger.info("global epochs:{},\tlocal epochs:{}".format(args.R, args.E))
     logger.info("global_model:{},\tlocal model:{}".format(args.global_model, args.local_model))
 

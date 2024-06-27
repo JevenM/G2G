@@ -18,7 +18,7 @@ for name in args.__dict__:
     if getattr(args,name) in ['True','False','None']:
         setattr(args,name,eval(getattr(args,name)))
 
-comments = f"{args.dataset}-{args.local_model}-r{args.R}-le{args.E}-bs{args.batch_size}-it{args.iteration}-s{args.mnist_subset}-{args.algorithm}"
+comments = f"{args.dataset}-{args.local_model}-r{args.R}-le{args.E}-bs{args.batch_size}-it{args.iteration}-s{args.mnist_subset}-iid{args.iid}-{args.algorithm}"
 print(comments)
 result_name = str(datetime.now()).split('.')[0].replace(" ", "_").replace(":", "_").replace("-", "_")+'_'+comments
 
