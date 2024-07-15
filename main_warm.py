@@ -2,7 +2,7 @@ import torch
 from Node import Node, Global_Node
 from Args import args_parser
 from Data import Data
-from utils import LR_scheduler, Recorder, exp_details, Summary, dimension_reduction
+from utils import LR_scheduler, Recorder, exp_details, Summary, dimension_reduction, my_confusion_matrix
 from Trainer import Trainer, train_ce, train_classifier, train_fc, train_ssl, train_ssl1
 from log import logger_config, set_random_seed
 from datetime import datetime
@@ -110,7 +110,8 @@ for rounds in range(args.R):
         recorder.test_on_target(Node_List[k], summary_writer, rounds)
         if rounds == args.R-1:
             try:
-                dimension_reduction(Node_List[k], Data, rounds)
+                # dimension_reduction(Node_List[k], Data, rounds)
+                my_confusion_matrix(Node_List[k], Data, os.path.join(args.save_path+'/save/', f'client_{Node_List[k].num}_cm.png'))
             except Exception as e:
                 logger.info(f"An error occurred: {e}")
     
@@ -148,7 +149,8 @@ for rounds in range(args.R):
         recorder.server_test_on_target(Global_node, summary_writer, rounds)
     if rounds == args.R-1:
         try:
-            dimension_reduction(Global_node, Data, rounds)
+            # dimension_reduction(Global_node, Data, rounds)
+            my_confusion_matrix(Global_node, Data, os.path.join(args.save_path+'/save/', f'global_cm.png'))
         except Exception as e:
             logger.info(f"An error occurred: {e}")
 recorder.finish()

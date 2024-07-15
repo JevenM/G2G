@@ -206,6 +206,7 @@ class Loader_dataset(Dataset):
         self.transform = tranforms
         self.classes = self.dataset.classes
         self.class_to_idx = self.dataset.class_to_idx
+        self.targets = self.dataset.targets
 
     def __len__(self):
         return self.length
@@ -350,6 +351,8 @@ class Loader_dataset_pacs(Dataset):
         hdf = h5py.File(self.path, 'r')
         self.length = len(hdf['labels'])   # <KeysViewHDF5 ['images', 'labels']>
         self.transform = tranforms
+        self.targets = [x - 1 for x in hdf['labels'][:]]
+        # print(f"tatrttttttt{self.targets}")
         hdf.close()
 
     def __len__(self):
@@ -388,22 +391,22 @@ def get_pacs_loaders(args, client, logger):
     target_data = Loader_dataset_pacs(target_path, trans1)
     target_loader = DataLoader(target_data, args.batch_size, True, num_workers=args.workers, pin_memory=args.pin)
     class_to_idx = {
-                    '0 - dog': 0,
-                    '1 - elephant': 1,
-                    '2 - giraffe': 2,
-                    '3 - guitar': 3,
-                    '4 - horse': 4,
-                    '5 - house': 5,
-                    '6 - person': 6,
+                    'dog': 0,
+                    'elephant': 1,
+                    'giraffe': 2,
+                    'guitar': 3,
+                    'horse': 4,
+                    'house': 5,
+                    'person': 6,
                 }
     classes = {
-                '0 - dog',
-                '1 - elephant',
-                '2 - giraffe',
-                '3 - guitar',
-                '4 - horse',
-                '5 - house',
-                '6 - person',
+                'dog',
+                'elephant',
+                'giraffe',
+                'guitar',
+                'horse',
+                'house',
+                'person',
             }
     return train_loaders, valid_loaders, target_loader, classes, class_to_idx
 
@@ -611,22 +614,22 @@ def get_dataset_PACS(domains_name=[]):
     target_datas = Loader_dataset_pacs(target_path, trans1)
 
     class_to_idx = {
-                    '0 - dog': 0,
-                    '1 - elephant': 1,
-                    '2 - giraffe': 2,
-                    '3 - guitar': 3,
-                    '4 - horse': 4,
-                    '5 - house': 5,
-                    '6 - person': 6,
+                    'dog': 0,
+                    'elephant': 1,
+                    'giraffe': 2,
+                    'guitar': 3,
+                    'horse': 4,
+                    'house': 5,
+                    'person': 6,
                 }
     classes_name = {
-                '0 - dog',
-                '1 - elephant',
-                '2 - giraffe',
-                '3 - guitar',
-                '4 - horse',
-                '5 - house',
-                '6 - person',
+                'dog',
+                'elephant',
+                'giraffe',
+                'guitar',
+                'horse',
+                'house',
+                'person',
             }
 
     return train_datas_list, valid_datas_list, target_datas, classes_name, class_to_idx

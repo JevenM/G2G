@@ -375,7 +375,6 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
         for k in range(args.discr_e):
             # 训练辨别器
             node.optm_disc.zero_grad()
-            # real_outputs = discriminator(real_images.view(batchsize, -1))
             f_r, _ = node.model(real_images)
             real_outputs = node.disc_model(f_r, y)
             loss_real = criterion_BCE(real_outputs, real_labels)
@@ -482,11 +481,11 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
     ))
 
     if args.save_model:
-        simclr_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_simclr.pth')
-        gen_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_gen.pth')
+        save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+args.global_model+'_model.pth')
+        # gen_save_path = os.path.join(args.save_path+'/save/model/', str(node.num)+'_gen.pth')
 
-        torch.save(node.model.state_dict(), simclr_save_path)
-        torch.save(node.gen_model.state_dict(), gen_save_path)
+        torch.save(node.model.state_dict(), save_path)
+        # torch.save(node.gen_model.state_dict(), gen_save_path)
 
     node.model.eval()
     model = node.model.cpu()
@@ -513,8 +512,8 @@ def train_adv(node, args, logger, round, sw = None, epo=None):
         # L2 归一化
         prototypes = F.normalize(prototypes, p=2, dim=1)
 
-        # logger.info(f"Prototypes computed successfully! {node.prototypes}")
-        node.prototypes = prototypes
+    # logger.info(f"Prototypes computed successfully! {node.prototypes}")
+    node.prototypes = prototypes
     
 
 # Constrastive Semantic Alignment Loss
@@ -751,8 +750,8 @@ def train_ssl(node, args, logger, round, sw=None):
         # L2 归一化
         prototypes = F.normalize(prototypes, p=2, dim=1)
 
-        # logger.info(f"Prototypes computed successfully! {node.prototypes}")
-        node.prototypes = prototypes
+    # logger.info(f"Prototypes computed successfully! {node.prototypes}")
+    node.prototypes = prototypes
 
 def evaluate_model(device, model, test_loader, logger):
     model.eval()
@@ -826,28 +825,29 @@ def train_ce(node, args, logger, round, sw=None):
 
     node.model.eval()
     model = node.model.cpu()
-    
-    for images, labels in train_loader:
-        # images = images.to(node.device)
-        feature, _ = model(images)
-        # feature = feature.cpu()
-        for i in range(args.classes):  # 遍历每个类别
-            class_indices = (labels == i)  # 找到属于当前类别的样本的索引
-            class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
-            prototypes[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
-            class_counts[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
+    with torch.no_grad():
+        for images, labels in train_loader:
+            # images = images.to(node.device)
+            feature, _ = model(images)
+            # feature = feature.cpu()
+            for i in range(args.classes):  # 遍历每个类别
+                class_indices = (labels == i)  # 找到属于当前类别的样本的索引
+                if class_indices.sum() > 0:  # 如果当前类别存在样本
+                    class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
+                    prototypes[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
+                    class_counts[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
 
-    # 计算每个类别的平均特征向量
-    for i in range(args.classes):
-        if class_counts[i] > 0:
-            prototypes[i] /= class_counts[i]
-    # L2 归一化
-    prototypes = F.normalize(prototypes, p=2, dim=1)
+        # 计算每个类别的平均特征向量
+        for i in range(args.classes):
+            if class_counts[i] > 0:
+                prototypes[i] /= class_counts[i]
+        # L2 归一化
+        prototypes = F.normalize(prototypes, p=2, dim=1)
 
     # logger.info(f"Prototypes computed successfully! {node.prototypes}")
     node.prototypes = prototypes
     # 清理缓存
-    torch.cuda.empty_cache()
+    # torch.cuda.empty_cache()
 
 
 def train_ssl1(node, args, logger, round, sw=None):
@@ -885,24 +885,24 @@ def train_ssl1(node, args, logger, round, sw=None):
     class_counts = torch.zeros(args.classes)
     dim = node.model.out_dim
     prototypes = torch.zeros(args.classes, dim)
+    with torch.no_grad():
+        # 遍历整个数据集
+        for images, labels in node.train_data:
+            # images = images.to(node.device)
+            feature, _ = model(images)
+            # feature = feature.cpu()
+            for i in range(args.classes):  # 遍历每个类别
+                class_indices = (labels == i)  # 找到属于当前类别的样本的索引
+                class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
+                prototypes[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
+                class_counts[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
 
-    # 遍历整个数据集
-    for images, labels in node.train_data:
-        # images = images.to(node.device)
-        feature, _ = model(images)
-        # feature = feature.cpu()
-        for i in range(args.classes):  # 遍历每个类别
-            class_indices = (labels == i)  # 找到属于当前类别的样本的索引
-            class_outputs = feature[class_indices]  # 提取属于当前类别的样本的特征向量
-            prototypes[i] += torch.sum(class_outputs, dim=0)  # 将当前类别的特征向量累加到原型矩阵中
-            class_counts[i] += class_outputs.shape[0]  # 统计当前类别的样本数量
-
-    # 计算每个类别的平均特征向量
-    for i in range(args.classes):
-        if class_counts[i] > 0:
-            prototypes[i] /= class_counts[i]
-    # L2 归一化
-    prototypes = F.normalize(prototypes, p=2, dim=1)
+        # 计算每个类别的平均特征向量
+        for i in range(args.classes):
+            if class_counts[i] > 0:
+                prototypes[i] /= class_counts[i]
+        # L2 归一化
+        prototypes = F.normalize(prototypes, p=2, dim=1)
 
     # logger.info(f"Prototypes computed successfully! {node.prototypes}")
     node.prototypes = prototypes
