@@ -345,6 +345,9 @@ class Recorder(object):
             sw.add_scalar(f'Test-target/{node.num}', acc, round+1)
             sw.add_scalar(f'Test-target/{node.num}/pseu', accuracy1, round+1)
             sw.add_scalar(f'Test-target/{node.num}/true', accuracy2, round+1)
+        if self.args.save_model:
+            save_path = os.path.join(self.args.save_path+'/save/model/', str(node.num)+self.args.global_model+'_model.pth')
+            torch.save(node.model.state_dict(), save_path)
 
     def log(self, node):
         # print(node.num)
@@ -426,17 +429,22 @@ def get_all_preds(model, loader):
         `all_preds`: all prediction results of full dataset In the form of a one-dimensional tensor.
     '''
     all_preds = torch.tensor([])
+    all_feats = torch.tensor([])
     for batch in loader:
         data, _ = batch
-        _,preds = model(data)
+        feats,preds = model(data)
         all_preds = torch.cat(
             (all_preds, preds),
             dim=0
         )
-    return all_preds
+        all_feats = torch.cat(
+            (all_feats, feats),
+            dim=0
+        )
+    return all_preds, all_feats
 
 
-def my_confusion_matrix(node, Data, save_path):
+def my_confusion_matrix(node, Data, save_path, logger):
     '''
     Call `plot_confusion_matrix` function to draw Confuse-Matrix.
 
@@ -456,12 +464,23 @@ def my_confusion_matrix(node, Data, save_path):
     model = node.model.cpu()
     if node.num == 0:
         targets = node.test_data.dataset.targets
-        train_preds = get_all_preds(model, node.test_data)
+        train_preds, all_feats = get_all_preds(model, node.test_data)
+        feature = F.normalize(all_feats.cpu(), p=2, dim=1)
+        pred = compute_distances(feature, node.proto)
     else:
         targets = node.target_loader.dataset.targets
-        train_preds = get_all_preds(model, node.target_loader)
+        train_predsm, all_feats = get_all_preds(model, node.target_loader)
+        feature = F.normalize(all_feats.cpu(), p=2, dim=1)
+        pred = compute_distances(feature, node.prototypes)
     # print(f"cm1111111111: {targets}, {train_preds.argmax(dim=1)}")
-    cm = confusion_matrix(targets, train_preds.argmax(dim=1))
+    # cm = confusion_matrix(targets, train_preds.argmax(dim=1))
+    
+    cm = confusion_matrix(targets, pred)
+    diagonal_sum = np.trace(cm)
+    total_sum = np.sum(cm)
+    logger.info(f"cm: {cm}, diag:{diagonal_sum}, total:{total_sum}")
+    np.save(os.path.join(node.args.save_path+'/save/', f'cm_target_node{node.num}_{node.args.dataset}.npy'), cm)
+
     # print(f"cm: {cm}")
     plot_confusion_matrix(cm, names, save_path)
 

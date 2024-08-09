@@ -110,8 +110,8 @@ for rounds in range(args.R):
         recorder.test_on_target(Node_List[k], summary_writer, rounds)
         if rounds == args.R-1:
             try:
-                # dimension_reduction(Node_List[k], Data, rounds)
-                my_confusion_matrix(Node_List[k], Data, os.path.join(args.save_path+'/save/', f'client_{Node_List[k].num}_cm.png'))
+                dimension_reduction(Node_List[k], Data, rounds)
+                my_confusion_matrix(Node_List[k], Data, os.path.join(args.save_path+'/save/', f'client_{Node_List[k].num}_cm.png'), logger)
             except Exception as e:
                 logger.info(f"An error occurred: {e}")
     
@@ -149,8 +149,8 @@ for rounds in range(args.R):
         recorder.server_test_on_target(Global_node, summary_writer, rounds)
     if rounds == args.R-1:
         try:
-            # dimension_reduction(Global_node, Data, rounds)
-            my_confusion_matrix(Global_node, Data, os.path.join(args.save_path+'/save/', f'global_cm.png'))
+            dimension_reduction(Global_node, Data, rounds)
+            my_confusion_matrix(Global_node, Data, os.path.join(args.save_path+'/save/', f'global_cm.png'), logger)
         except Exception as e:
             logger.info(f"An error occurred: {e}")
 recorder.finish()

@@ -11,6 +11,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split, TensorDataset, Dataset, Subset, ConcatDataset
 from torchvision import datasets, transforms
 from sklearn.model_selection import train_test_split
+from torchvision.datasets import ImageFolder
 
 DATA_PATH = os.path.abspath("/data/mwj/data")
 
@@ -73,13 +74,16 @@ class Data(object):
             if iteration == 0:
                 client=['Real World','Product','Clipart','Art']                                                                                                 
             if iteration == 1:
-                client=[ 'Real World','Product','Art','Clipart']                                      
+                client=['Real World','Product','Art','Clipart']                                      
             if iteration == 2:
                 client=['Real World','Art','Clipart', 'Product']                          
             if iteration == 3:
                 client=['Clipart', 'Art','Product','Real World']
             if client is not None:
-                self.train_loader, self.test_loader,self.target_loader = get_office_loaders(args,client)
+                if args.iid == 0:
+                    self.train_loader, self.test_loader, self.target_loader, self.classes, self.class_to_idx = get_office_loaders(args, client, logger)
+                elif args.iid == 1:
+                    self.train_loader, self.test_loader, self.target_loader, self.classes, self.class_to_idx = partition_data(args, client, "iid", 0.1, logger)
         self.client = client
         logger.info('CLIENT_ORDER{}'.format(client))
 
@@ -385,11 +389,11 @@ def get_pacs_loaders(args, client, logger):
         train_loaders[i] = DataLoader(train_datas[i], args.batch_size, True, num_workers=args.workers, pin_memory=args.pin)
         valid_path[i] = path_root + client[i] + '_val.hdf5'
         valid_datas[i] = Loader_dataset_pacs(path=valid_path[i], tranforms=trans1)
-        valid_loaders[i] = DataLoader(valid_datas[i], args.batch_size, True, num_workers=args.workers, pin_memory=args.pin)
+        valid_loaders[i] = DataLoader(valid_datas[i], args.batch_size, False, num_workers=args.workers, pin_memory=args.pin)
     target_path = path_root + client[3] + '_test.hdf5'
     logger.info(f"unseen domain: {client[3]}")
     target_data = Loader_dataset_pacs(target_path, trans1)
-    target_loader = DataLoader(target_data, args.batch_size, True, num_workers=args.workers, pin_memory=args.pin)
+    target_loader = DataLoader(target_data, args.batch_size, False, num_workers=args.workers, pin_memory=args.pin)
     class_to_idx = {
                     'dog': 0,
                     'elephant': 1,
@@ -512,8 +516,11 @@ def get_pacs_domain(args, domains, logger):
     target_loader = DataLoader(target_data, batch_size=args.batch_size, shuffle=False, num_workers=args.workers,pin_memory=args.pin)
     return train_loaders, valid_loaders, target_loader, target_data.classes, target_data.label_name_2_index
 
-def get_office_loaders(args, client):
-    path_root = 'datasets/OfficeHome/'
+def get_office_loaders(args, client, logger):
+    # path_root = 'datasets/OfficeHome/'
+    # 参考FedSR中所说，only 1000 images are rotated to form the domain
+    data = eval("OfficeHome")(root="/data/mwj/data/", test_envs=client[-1])
+    target_domain_idx = len(client)-1
     trans0 = transforms.Compose([transforms.RandomResizedCrop(225, scale=(0.7, 1.0)),
                                  transforms.RandomHorizontalFlip(),
                                  transforms.RandomGrayscale(),
@@ -525,18 +532,79 @@ def get_office_loaders(args, client):
     train_path, valid_path = {}, {}
     train_datas, train_loaders = {}, {}
     valid_datas, valid_loaders = {}, {}
-    for i in range(3):
-        train_path[i] = path_root + client[i] + '/train'
-        train_datas[i] = Loader_dataset(path=train_path[i], tranforms=trans0)
-        train_loaders[i] = DataLoader(train_datas[i], args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
+    for s_domain_idx in range(target_domain_idx):
+        dataset = data.datasets[s_domain_idx]
+        # train_path[i] = path_root + client[i] + '/train'
+        train_len = int(len(dataset) * 0.9)
+        test_len = len(dataset) - train_len
+        # print(train_len, test_len)
+        train_datas[s_domain_idx], valid_datas[s_domain_idx] = random_split(dataset, [train_len,test_len], generator=torch.Generator().manual_seed(0))
+        # train_datas[i] = Loader_dataset(path=train_path[i], tranforms=trans0)
+        train_loaders[s_domain_idx] = DataLoader(train_datas[s_domain_idx], args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
+        valid_loaders[s_domain_idx] = DataLoader(valid_datas[s_domain_idx], args.batch_size, False, num_workers=args.workers,pin_memory=args.pin)
 
-        valid_path[i] = path_root + client[i] + '/val'
-        valid_datas[i] = Loader_dataset(path=valid_path[i], tranforms=trans1)
-        valid_loaders[i] = DataLoader(valid_datas[i], args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
-    target_path = path_root + client[3] + '/val'
-    target_data = Loader_dataset(target_path, trans1)
-    target_loader = DataLoader(target_data, args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
-    return train_loaders, valid_loaders, target_loader
+        # valid_path[i] = path_root + client[i] + '/val'
+        # valid_datas[i] = Loader_dataset(path=valid_path[i], tranforms=trans1)
+        # valid_loaders[i] = DataLoader(valid_datas[i], args.batch_size, False, num_workers=args.workers,pin_memory=args.pin)
+    # target_path = path_root + client[3] + '/val'
+    logger.info(f"unseen domain: {client[target_domain_idx]}")
+    target_data = data.datasets[target_domain_idx] 
+    # target_data = Loader_dataset(target_path, trans1)
+    target_loader = DataLoader(target_data, args.batch_size, False, num_workers=args.workers,pin_memory=args.pin)
+    
+    return train_loaders, valid_loaders, target_loader, data.classes, data.class_to_idx
+
+
+class MultipleEnvironmentImageFolder(MultipleDomainDataset):
+    def __init__(self, root, test_envs, augment):
+        super().__init__()
+        environments = [f.name for f in os.scandir(root) if f.is_dir()]
+        environments = sorted(environments)
+
+        self.transform = transforms.Compose([
+            transforms.Resize((224,224)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+        self.augment_transform = transforms.Compose([
+            # transforms.Resize((224,224)),
+            transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(0.3, 0.3, 0.3, 0.3),
+            transforms.RandomGrayscale(),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+        self.datasets = []
+        for i, environment in enumerate(environments):
+
+            if augment and environment != test_envs:
+                env_transform = self.augment_transform
+            else:
+                env_transform = self.transform
+
+            path = os.path.join(root, environment)
+            env_dataset = ImageFolder(path,
+                transform=env_transform)
+
+            self.datasets.append(env_dataset)
+
+        self.input_shape = (3, 224, 224,)
+        
+        self.classes = self.datasets[-1].classes
+        self.num_classes = len(self.classes)
+        self.class_to_idx = self.datasets[-1].class_to_idx
+
+class OfficeHome(MultipleEnvironmentImageFolder):
+    ENVIRONMENTS = ["A", "C", "P", "R"]
+    def __init__(self, root, test_envs, augment=True):
+        self.dir = os.path.join(root, "OfficeHome/OfficeHomeDataset_10072016/")
+        super().__init__(self.dir, test_envs, augment)
+
 
 # ------------------------------------------start 来自 Federated Generative Learning with Foundation Models--------------------------------------
 def record_net_data_stats(y_train, net_dataidx_map, logger, classes):
@@ -634,6 +702,25 @@ def get_dataset_PACS(domains_name=[]):
 
     return train_datas_list, valid_datas_list, target_datas, classes_name, class_to_idx
 
+def get_dataset_office_home(domains_name=[]):
+    data = eval("OfficeHome")(root="/data/mwj/data/", test_envs=domains_name[-1])
+    target_domain_idx = len(domains_name)-1
+
+    train_datas = []
+    valid_datas = []
+    for s_domain_idx in range(target_domain_idx):
+        dataset = data.datasets[s_domain_idx]
+        train_len = int(len(dataset) * 0.9)
+        test_len = len(dataset) - train_len
+        td, vd = random_split(dataset, [train_len,test_len], generator=torch.Generator().manual_seed(0))
+        train_datas.append(td)
+        valid_datas.append(vd)
+    print(f"unseen domain: {domains_name[target_domain_idx]}")
+    target_data = data.datasets[target_domain_idx] 
+
+    return train_datas, valid_datas, target_data, data.classes, data.class_to_idx
+
+
 def get_dataset(data_type='vlcs', domains=['SUN09', 'Caltech101', 'LabelMe', 'VOC2007']):
     classes_name, class_to_idx = None, None
     
@@ -643,10 +730,13 @@ def get_dataset(data_type='vlcs', domains=['SUN09', 'Caltech101', 'LabelMe', 'VO
     # get real PACS dataset
     elif data_type == "pacs":
         trainset_list, valset_list, target_dataset, classes_name, class_to_idx = get_dataset_PACS(domains_name=domains)
+    elif data_type == "office-home":
+        trainset_list, valset_list, target_dataset, classes_name, class_to_idx = get_dataset_office_home(domains_name=domains)
     train_dataset = ConcatDataset(trainset_list)
     val_dataset = ConcatDataset(valset_list)
 
     return train_dataset, val_dataset, target_dataset, classes_name, class_to_idx
+
 
 class CustomDataset(Dataset):
     def __init__(self, images, labels):
