@@ -227,7 +227,7 @@ class UniqueLabelSampler(Sampler):
 '''
 
 def get_rmnist_loaders(args, client, logger):
-    data = eval("RotatedMNIST")(root="/data/mwj/data/", environments=client)
+    data = eval("RotatedMNIST")(root="/data/mwj/dataset/", environments=client)
     train_datas, train_loaders = {}, {}
     valid_datas, valid_loaders = {}, {}
     target_domain_idx = len(client)-1
