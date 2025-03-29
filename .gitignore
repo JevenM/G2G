@@ -3,9 +3,7 @@ models/
 *.pyc
 *.pt
 save/
-*.png
-*.txt
 *.0
 *.log
-*.pdf
-*.svg
+
+
