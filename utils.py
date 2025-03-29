@@ -12,6 +12,8 @@ from sklearn.decomposition import PCA
 from torchvision.models.feature_extraction import create_feature_extractor
 from datetime import datetime
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
+import itertools
 import torch.nn.functional as F
 
 '''
@@ -343,6 +345,9 @@ class Recorder(object):
             sw.add_scalar(f'Test-target/{node.num}', acc, round+1)
             sw.add_scalar(f'Test-target/{node.num}/pseu', accuracy1, round+1)
             sw.add_scalar(f'Test-target/{node.num}/true', accuracy2, round+1)
+        if self.args.save_model:
+            save_path = os.path.join(self.args.save_path+'/save/model/', str(node.num)+self.args.global_model+'_model.pth')
+            torch.save(node.model.state_dict(), save_path)
 
     def log(self, node):
         # print(node.num)
@@ -372,6 +377,114 @@ class Recorder(object):
         for key, value in self.target_acc.items():
             if value != []:
                 self.logger.info(f"client{key}, list: {value}")
+
+
+
+def plot_confusion_matrix(cm, classes, save_path, title='Confusion matrix', normalize=False, cmap=plt.cm.Greens):
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        # print("显示百分比：")
+        np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
+        # print(cm)
+    # else:
+        # print('显示具体数字：')
+        # print(cm)
+    plt.figure(figsize=(8,8))
+    # plt.imshow 负责对图像进行处理，并显示其格式，但是不能显示
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    # plt.title(title)
+    # plt.colorbar()
+    tick_marks = np.arange(len(classes), dtype=np.int32)
+    # plt.tick_params(labelsize=16) # 设置类别文字大小
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+
+    # matplotlib版本问题，如果不加下面这行代码，则绘制的混淆矩阵上下只能显示一半，有的版本的matplotlib不需要下面的代码，分别试一下即可
+    plt.ylim(len(classes) - 0.5, -0.5)
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, format(cm[i, j], fmt),
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black", fontsize='10')
+    plt.tight_layout()
+    # plt.ylabel('True label')
+    # plt.xlabel('Predicted label')
+    plt.gcf().subplots_adjust(bottom=0.2)
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    # plt.show()
+
+
+def get_all_preds(model, loader):
+    '''
+    Get all prediction results of a dataset.
+
+    Args:
+    ---
+        `model`: network model
+        `loader`: dataset loader
+
+    Returns:
+    ---
+        `all_preds`: all prediction results of full dataset In the form of a one-dimensional tensor.
+    '''
+    all_preds = torch.tensor([])
+    all_feats = torch.tensor([])
+    for batch in loader:
+        data, _ = batch
+        feats,preds = model(data)
+        all_preds = torch.cat(
+            (all_preds, preds),
+            dim=0
+        )
+        all_feats = torch.cat(
+            (all_feats, feats),
+            dim=0
+        )
+    return all_preds, all_feats
+
+
+def my_confusion_matrix(node, Data, save_path, logger):
+    '''
+    Call `plot_confusion_matrix` function to draw Confuse-Matrix.
+
+    Args:
+    ---
+        `model`: 模型
+        `loader`: 数据集加载器
+        `targets`(list): train_set.targets, 是[0,1,2,3,4,...9]的数字, 不是one-hot
+        `save_path`(str): 保存路径
+        `name`(tuple): 类别标签元组
+    '''
+    plt.rcParams.update({'font.size': 12})  # font size 10 12 14 16 main 16
+    plt.rcParams['lines.linewidth'] = 2
+    
+    names = Data.classes
+    node.model.eval()
+    model = node.model.cpu()
+    if node.num == 0:
+        targets = node.test_data.dataset.targets
+        train_preds, all_feats = get_all_preds(model, node.test_data)
+        feature = F.normalize(all_feats.cpu(), p=2, dim=1)
+        pred = compute_distances(feature, node.proto)
+    else:
+        targets = node.target_loader.dataset.targets
+        train_predsm, all_feats = get_all_preds(model, node.target_loader)
+        feature = F.normalize(all_feats.cpu(), p=2, dim=1)
+        pred = compute_distances(feature, node.prototypes)
+    # print(f"cm1111111111: {targets}, {train_preds.argmax(dim=1)}")
+    # cm = confusion_matrix(targets, train_preds.argmax(dim=1))
+    
+    cm = confusion_matrix(targets, pred)
+    diagonal_sum = np.trace(cm)
+    total_sum = np.sum(cm)
+    logger.info(f"cm: {cm}, diag:{diagonal_sum}, total:{total_sum}")
+    np.save(os.path.join(node.args.save_path+'/save/', f'cm_target_node{node.num}_{node.args.dataset}.npy'), cm)
+
+    # print(f"cm: {cm}")
+    plot_confusion_matrix(cm, names, save_path)
+
+
 
 def dimension_reduction(node, Data, round):
     marker_list = ['.', ',', 'o', 'v', '^', '<', '>', '1', '2', '3', '4', '8', 's', 'p', 'P', '*', 'h', 'H', '+', 'x', 'X', 'D', 'd', '|', '_', 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
@@ -551,7 +664,7 @@ def Summary(args, logger):
     logger.info("lr:{}, is pretrained:{}".format(args.lr, args.pretrained))
     logger.info("dataset:{}\tbatchsize:{}\tclasses:{}".format(args.dataset, args.batch_size, args.classes))
     logger.info("node_num:{},\tsplit:{}".format(args.node_num, args.split))
-    # print("iid:{},\tequal:{},\n".format(args.iid == 1, args.unequal == 0))
+    logger.info("iid:{}".format(args.iid == 1))
     logger.info("global epochs:{},\tlocal epochs:{}".format(args.R, args.E))
     logger.info("global_model:{},\tlocal model:{}".format(args.global_model, args.local_model))
 

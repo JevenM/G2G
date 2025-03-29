@@ -64,9 +64,11 @@ def args_parser():
     
     # Data
     parser.add_argument('--dataset', type=str, default='vlcs',
-                        help='datasets: {air_ori, air, pacs, cifar100, cifar10, femnist, office-home, mnist, rotatedmnist}')
+                        help='datasets: {air_ori, air, pacs, vlcs, cifar100, cifar10, femnist, office-home, mnist, rotatedmnist}')
     parser.add_argument('--batch_size', type=int, default=32,
                         help='batch_size')
+    parser.add_argument('--iid', type=int, default=0,
+                        help='data iid distribution')
     parser.add_argument('--split', type=int, default=5,
                         help='data split')
     parser.add_argument('--val_ratio', type=float, default=0.1,
