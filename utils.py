@@ -12,6 +12,8 @@ from sklearn.decomposition import PCA
 from torchvision.models.feature_extraction import create_feature_extractor
 from datetime import datetime
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
+import itertools
 import torch.nn.functional as F
 
 '''
@@ -115,6 +117,24 @@ class GradualWarmupScheduler(_LRScheduler):
         else:
             self.step_ReduceLROnPlateau(metrics, epoch)
 
+class AverageMeter(object):
+    def __init__(self):
+        self.reset()
+    def reset(self):
+        self.count = 0
+        self.sum = 0
+    def update(self,val,n=1):
+        self.count += n
+        self.sum += val*n
+    def average(self):
+        return self.sum/self.count
+    def __repr__(self):
+        r = self.sum/self.count
+        if r<1e-3:
+            return '{:.2e}'.format(r)
+        else:
+            return '%.4f'%(r)
+
 class Recorder(object):
     def __init__(self, args, logger):
         self.args = args
@@ -134,11 +154,14 @@ class Recorder(object):
 
     def validate(self, node, sw):
         self.counter += 1
-        # node.clser.to(node.device).eval()
         if self.args.algorithm == 'fed_avg':
-            node.meme.to(node.device).eval()
+            if node.num != 0:
+                node.meme.to(node.device).eval()
+            else:
+                node.model.to(node.device).eval()
         else:
-            node.cl_model.to(node.device).eval()
+            node.model.to(node.device).eval()
+
         total_loss = 0.0
         correct = 0.0
         true_labels = []
@@ -148,31 +171,40 @@ class Recorder(object):
         with torch.no_grad():
             for idx, (data, target) in enumerate(node.test_data):
                 data, target = data.to(node.device), target.to(node.device)
-                # output = node.clser(data)
+                output = None
                 if self.args.algorithm == 'fed_avg':
-                    output = node.meme(data)
-                else:
-                    output = node.cl_model(data)
-                if isinstance(output, tuple) and self.args.algorithm == 'fed_adv':
-                    features, embed, outputs = output
-                    features = F.normalize(features, p=2, dim=1)
-                    # embed = F.normalize(embed, p=2, dim=1)
-                    if node.prototypes_global is None:
-                        pred = compute_distances(features, node.prototypes)
-                        # pred = compute_distances(embed, node.prototypes)
+                    if node.num != 0:
+                        output = node.meme(data)
                     else:
-                        pred = compute_distances(features, node.prototypes_global)
-                        # pred = compute_distances(embed, node.prototypes_global)
-                    # similarity_scores = torch.matmul(features, prototypes.t())  # 计算相似度(效果不如L2)
-                    # _, pred = torch.max(similarity_scores, dim=1)  # 选择最相似的类别作为预测标签
+                        output = node.model(data)
+                elif self.args.algorithm == 'fed_adv' or self.args.algorithm == 'fed_mutual' or self.args.algorithm == 'fed_adg':
+                    output = node.model(data)
+                elif self.args.algorithm == 'fed_sr':
+                    # z = node.model.featurize(data,num_samples=20)
+                    # preds = torch.softmax(node.model.cls(z),dim=1)
+                    # preds = preds.view([20,-1,node.args.classes]).mean(0)
+                    # output = torch.log(preds)
+                    output = node.model(data)
+
+                if isinstance(output, tuple) and self.args.algorithm == 'fed_adv':
+                    features, outputs = output
+                    features = F.normalize(features, p=2, dim=1)
+                    if node.prototypes_global is None:
+                        pred = compute_distances(features.cpu(), node.prototypes)
+                    else:
+                        pred = compute_distances(features.cpu(), node.prototypes_global)
                     _, outd = torch.max(outputs, dim=1)
                     true_labels.extend(target.cpu().numpy())
-                    pred_labels.extend(pred.cpu().numpy())
+                    pred_labels.extend(pred.numpy())
                     out_labels.extend(outd.cpu().numpy())
+                elif self.args.algorithm == 'fed_sr':
+                    total_loss += torch.nn.CrossEntropyLoss()(output, target)
+                    p = output.argmax(dim=1)
+                    correct += p.eq(target.view_as(p)).sum().item()
                 else:
-                    total_loss += torch.nn.CrossEntropyLoss()(output[2], target)
-                    pred = output[2].argmax(dim=1)
-                    correct += pred.eq(target.view_as(pred)).sum().item()
+                    total_loss += torch.nn.CrossEntropyLoss()(output[1], target)
+                    p = output[1].argmax(dim=1)
+                    correct += p.eq(target.view_as(p)).sum().item()
 
             if true_labels != []:
                 accuracy1 = accuracy_score(true_labels, pred_labels)
@@ -191,10 +223,10 @@ class Recorder(object):
             self.acc_best[node.num] = self.val_acc[str(node.num)][-1]
             if self.args.save_model:
                 # torch.save(node.clser.state_dict(), node.args.save_path+'/save/model/Node{:d}_{:s}_{:d}_{:s}.pt'.format(node.num, node.args.local_model, node.args.iteration, node.args.algorithm))
-                torch.save(node.cl_model.state_dict(), node.args.save_path+'/save/model/Node{:d}_{:s}_{:d}_{:s}.pt'.format(node.num, node.args.local_model, node.args.iteration, node.args.algorithm))
+                torch.save(node.model.state_dict(), node.args.save_path+'/save/model/Node{:d}_{:s}_{:d}_{:s}.pt'.format(node.num, node.args.local_model, node.args.iteration, node.args.algorithm))
             
             # add warm_up lr 
-            if self.args.warm_up == True and str(node.num) != '0':
+            if self.args.warm_up == True and str(node.num) != '0' and self.args.algorithm == 'fed_mutual':
                 node.sche_local.step(metrics=self.val_acc[str(node.num)][-1])
                 node.sche_meme.step(metrics=self.val_acc[str(node.num)][-1])
             self.logger.info('##### client{:d}: Better Accuracy on S: {:.2f}%'.format(node.num, self.val_acc[str(node.num)][-1]))
@@ -202,26 +234,18 @@ class Recorder(object):
         elif self.val_acc[str(node.num)][-1] <= self.acc_best[node.num]:
             self.logger.info('##### client{:d}: Not better Accuracy on S: {:.2f}%'.format(node.num, self.val_acc[str(node.num)][-1]))
 
-
-        # node.meme.to(node.device).eval()
-        # total_loss = 0.0
-        # correct = 0.0
-
-        # with torch.no_grad():
-        #     for idx, (data, target) in enumerate(node.test_data):
-        #         data, target = data.to(node.device), target.to(node.device)
-        #         output = node.meme(data)
-        #         total_loss += torch.nn.CrossEntropyLoss()(output, target)
-        #         pred = output.argmax(dim=1)
-        #         correct += pred.eq(target.view_as(pred)).sum().item()
-        #     total_loss = total_loss / (idx + 1)
-        #     acc = correct / len(node.test_data.dataset) * 100
     def test_on_target(self, node, sw, round):
-        # node.clser.to(node.device).eval()
         if self.args.algorithm == 'fed_avg':
-            node.meme.to(node.device).eval()
+            if node.num != 0:
+                node.meme.to(node.device)
+                node.meme.eval()
+            else:
+                node.model.to(node.device)
+                node.model.eval()
         else:
-            node.cl_model.to(node.device).eval()
+            node.model.to(node.device)
+            node.model.eval()
+
         true_labels = []
         pred_labels = []
         out_labels = []
@@ -230,34 +254,40 @@ class Recorder(object):
             accuracy1 = 0
             for idx, (data, target) in enumerate(node.target_loader):
                 data, target = data.to(node.device), target.to(node.device)
-                # output = node.clser(data)
-                if self.args.algorithm == 'fed_avg':
-                    output = node.meme(data)
-                else:
-                    output = node.cl_model(data)
-                features, embed, outputs = output
-                
                 true_labels.extend(target.cpu().numpy())
-                if self.args.algorithm == 'fed_adv':
-                    features = F.normalize(features, p=2, dim=1)
-                    # embed = F.normalize(embed, p=2, dim=1)
-                    if node.prototypes_global is None:
-                        pred = compute_distances(features, node.prototypes)
-                        # pred = compute_distances(embed, node.prototypes)
+                outputs = None
+                if self.args.algorithm == 'fed_avg':
+                    if node.num != 0:
+                        output = node.meme(data)
                     else:
-                        pred = compute_distances(features, node.prototypes_global)
-                        # pred = compute_distances(embed, node.prototypes_global)
-                    pred_labels.extend(pred.cpu().numpy())
-                    
-                    
+                        output = node.model(data)
+                    features, outputs = output
+                elif self.args.algorithm == 'fed_sr':
+                    # z = node.model.featurize(data,num_samples=20)
+                    # preds = torch.softmax(node.model.cls(z),dim=1)
+                    # preds = preds.view([20,-1,node.args.classes]).mean(0)
+                    # outputs = torch.log(preds)
+                    outputs = node.model(data)
+                elif self.args.algorithm == 'fed_adv':
+                    output = node.model(data)
+                    features, outputs = output
+                    features = F.normalize(features, p=2, dim=1)
+                    if node.prototypes_global is None:
+                        pred = compute_distances(features.cpu(), node.prototypes)
+                    else:
+                        pred = compute_distances(features.cpu(), node.prototypes_global)
+                    pred_labels.extend(pred.numpy())
+                else:
+                    output = node.model(data)
+                    features, outputs = output
+                
                 # similarity_scores = torch.matmul(features, prototypes.t())  # 计算相似度(效果不如L2)
                 # _, pred = torch.max(similarity_scores, dim=1)  # 选择最相似的类别作为预测标签
                 _, outd = torch.max(outputs, dim=1)
                 out_labels.extend(outd.cpu().numpy())
-            
+
             accuracy2 = accuracy_score(true_labels, out_labels)
             self.logger.info(f'c{node.num} on Target: test Accuracy: {accuracy2}')
-            accuracy1 = 0.0
             if self.args.algorithm == 'fed_adv':
                 accuracy1 = accuracy_score(true_labels, pred_labels)
                 self.logger.info(f'c{node.num} on Target: pseudo Accuracy: {accuracy1}')
@@ -268,7 +298,9 @@ class Recorder(object):
             sw.add_scalar(f'Test-target/{node.num}/true', accuracy2, round+1)
 
     def server_test_on_target(self, node, sw, round):
-        node.model.to(node.device).eval()
+        # node.num == 0
+        node.model.to(node.device)
+        node.model.eval()
         true_labels = []
         pred_labels = []
         out_labels = []
@@ -277,21 +309,34 @@ class Recorder(object):
             accuracy1 = 0
             for idx, (data, target) in enumerate(node.test_data):
                 data, target = data.to(node.device), target.to(node.device)
-                output = node.model(data)
-                feature, embed, outputs = output
-                if self.args.algorithm == 'fed_adv':
-                    feature = F.normalize(feature, p=2, dim=1)
-                    # embed = F.normalize(embed, p=2, dim=1)
-                    pred = compute_distances(feature, node.proto)
-                    # pred = compute_distances(embed, node.proto)
-                    pred_labels.extend(pred.cpu().numpy())
-
+                if self.args.algorithm != 'fed_sr':
+                    output = node.model(data)
+                    feature, outputs = output
+                    if self.args.algorithm == 'fed_adv':
+                        feature = F.normalize(feature.cpu(), p=2, dim=1)
+                        pred = compute_distances(feature, node.proto)
+                        pred_labels.extend(pred.numpy())
+                else:
+                    # z = node.model.featurize(data,num_samples=20)
+                    # 1!!!!!!!!!!torch.Size([10240, 512])
+                    # self.logger.info(f"1!!!!!!!!!!{z.shape}")
+                    # preds = torch.softmax(node.model.cls(z),dim=1)
+                    # 2!!!!!!!!!!torch.Size([10240, 10])
+                    # self.logger.info(f"2!!!!!!!!!!{preds.shape}")
+                    # preds = preds.view([20,-1,node.args.classes]).mean(0)
+                    # 3!!!!!!!!!!torch.Size([512, 10])
+                    # self.logger.info(f"3!!!!!!!!!!{preds.shape}")
+                    # outputs = torch.log(preds)
+                    # 4!!!!!!!!!!torch.Size([512, 10])
+                    # self.logger.info(f"4!!!!!!!!!!{outputs.shape}")
+                    outputs = node.model(data)
+                
                 _, outd = torch.max(outputs, dim=1)
                 true_labels.extend(target.cpu().numpy())
                 out_labels.extend(outd.cpu().numpy())
             if self.args.algorithm == 'fed_adv':
                 accuracy1 = accuracy_score(true_labels, pred_labels)
-                print(f's{node.num} on Target: pseudo Accuracy: {accuracy1}')
+                self.logger.info(f's{node.num} on Target: pseudo Accuracy: {accuracy1}')
             accuracy2 = accuracy_score(true_labels, out_labels)
             self.logger.info(f's{node.num} on Target: test Accuracy: {accuracy2}')
             acc = max(accuracy1, accuracy2) * 100
@@ -300,6 +345,9 @@ class Recorder(object):
             sw.add_scalar(f'Test-target/{node.num}', acc, round+1)
             sw.add_scalar(f'Test-target/{node.num}/pseu', accuracy1, round+1)
             sw.add_scalar(f'Test-target/{node.num}/true', accuracy2, round+1)
+        if self.args.save_model:
+            save_path = os.path.join(self.args.save_path+'/save/model/', str(node.num)+self.args.global_model+'_model.pth')
+            torch.save(node.model.state_dict(), save_path)
 
     def log(self, node):
         # print(node.num)
@@ -330,6 +378,114 @@ class Recorder(object):
             if value != []:
                 self.logger.info(f"client{key}, list: {value}")
 
+
+
+def plot_confusion_matrix(cm, classes, save_path, title='Confusion matrix', normalize=False, cmap=plt.cm.Greens):
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        # print("显示百分比：")
+        np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
+        # print(cm)
+    # else:
+        # print('显示具体数字：')
+        # print(cm)
+    plt.figure(figsize=(8,8))
+    # plt.imshow 负责对图像进行处理，并显示其格式，但是不能显示
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    # plt.title(title)
+    # plt.colorbar()
+    tick_marks = np.arange(len(classes), dtype=np.int32)
+    # plt.tick_params(labelsize=16) # 设置类别文字大小
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+
+    # matplotlib版本问题，如果不加下面这行代码，则绘制的混淆矩阵上下只能显示一半，有的版本的matplotlib不需要下面的代码，分别试一下即可
+    plt.ylim(len(classes) - 0.5, -0.5)
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, format(cm[i, j], fmt),
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black", fontsize='10')
+    plt.tight_layout()
+    # plt.ylabel('True label')
+    # plt.xlabel('Predicted label')
+    plt.gcf().subplots_adjust(bottom=0.2)
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    # plt.show()
+
+
+def get_all_preds(model, loader):
+    '''
+    Get all prediction results of a dataset.
+
+    Args:
+    ---
+        `model`: network model
+        `loader`: dataset loader
+
+    Returns:
+    ---
+        `all_preds`: all prediction results of full dataset In the form of a one-dimensional tensor.
+    '''
+    all_preds = torch.tensor([])
+    all_feats = torch.tensor([])
+    for batch in loader:
+        data, _ = batch
+        feats,preds = model(data)
+        all_preds = torch.cat(
+            (all_preds, preds),
+            dim=0
+        )
+        all_feats = torch.cat(
+            (all_feats, feats),
+            dim=0
+        )
+    return all_preds, all_feats
+
+
+def my_confusion_matrix(node, Data, save_path, logger):
+    '''
+    Call `plot_confusion_matrix` function to draw Confuse-Matrix.
+
+    Args:
+    ---
+        `model`: 模型
+        `loader`: 数据集加载器
+        `targets`(list): train_set.targets, 是[0,1,2,3,4,...9]的数字, 不是one-hot
+        `save_path`(str): 保存路径
+        `name`(tuple): 类别标签元组
+    '''
+    plt.rcParams.update({'font.size': 12})  # font size 10 12 14 16 main 16
+    plt.rcParams['lines.linewidth'] = 2
+    
+    names = Data.classes
+    node.model.eval()
+    model = node.model.cpu()
+    if node.num == 0:
+        targets = node.test_data.dataset.targets
+        train_preds, all_feats = get_all_preds(model, node.test_data)
+        feature = F.normalize(all_feats.cpu(), p=2, dim=1)
+        pred = compute_distances(feature, node.proto)
+    else:
+        targets = node.target_loader.dataset.targets
+        train_predsm, all_feats = get_all_preds(model, node.target_loader)
+        feature = F.normalize(all_feats.cpu(), p=2, dim=1)
+        pred = compute_distances(feature, node.prototypes)
+    # print(f"cm1111111111: {targets}, {train_preds.argmax(dim=1)}")
+    # cm = confusion_matrix(targets, train_preds.argmax(dim=1))
+    
+    cm = confusion_matrix(targets, pred)
+    diagonal_sum = np.trace(cm)
+    total_sum = np.sum(cm)
+    logger.info(f"cm: {cm}, diag:{diagonal_sum}, total:{total_sum}")
+    np.save(os.path.join(node.args.save_path+'/save/', f'cm_target_node{node.num}_{node.args.dataset}.npy'), cm)
+
+    # print(f"cm: {cm}")
+    plot_confusion_matrix(cm, names, save_path)
+
+
+
 def dimension_reduction(node, Data, round):
     marker_list = ['.', ',', 'o', 'v', '^', '<', '>', '1', '2', '3', '4', '8', 's', 'p', 'P', '*', 'h', 'H', '+', 'x', 'X', 'D', 'd', '|', '_', 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     class_list = Data.classes
@@ -341,8 +497,10 @@ def dimension_reduction(node, Data, round):
     random.seed(1234)
     random.shuffle(marker_list)
     random.shuffle(palette)
+    node.model.to(node.device)
+    node.model.eval()
     if node.num != 0:
-        model_trunc = create_feature_extractor(node.clser, return_nodes={'encoder': 'semantic_feature'})
+        model_trunc = create_feature_extractor(node.model, return_nodes={'net': 'semantic_feature'})
         #1 源域
         data_loader = torch.utils.data.DataLoader(node.test_data.dataset, batch_size=1, shuffle=False)
         encoding_array = []
@@ -353,8 +511,10 @@ def dimension_reduction(node, Data, round):
             feature = model_trunc(images)['semantic_feature'].squeeze().flatten().detach().cpu().numpy() # 执行前向预测，得到 avgpool 层输出的语义特征
             encoding_array.append(feature)
         encoding_array = np.array(encoding_array)
-        # 保存为本地的 npy 文件
-        np.save(os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser源域{Data.client[node.num-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array)
+        print(f"labels_list: {labels_list}")
+        if node.args.save_model:
+            # 保存为本地的 npy 文件
+            np.save(os.path.join(node.args.save_path+'/save/', f'client{node.num}_{round}_clser源域{Data.client[node.num-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array)
 
         print(f"源域{Data.client[node.num-1]}, encoding_array.len = {len(encoding_array)}, labels_list_.len = {len(labels_list)}")
 
@@ -386,10 +546,10 @@ def dimension_reduction(node, Data, round):
             plt.savefig(dim_reduc_save_path, dpi=300, bbox_inches='tight') # 保存图像
 
     if node.num == 0:
-        model_trunc = create_feature_extractor(node.model, return_nodes={'encoder': 'semantic_feature'})
+        model_trunc = create_feature_extractor(node.model, return_nodes={'net': 'semantic_feature'})
         data_loader_t = torch.utils.data.DataLoader(node.test_data.dataset, batch_size=1, shuffle=False)
     else:
-        model_trunc = create_feature_extractor(node.clser, return_nodes={'encoder': 'semantic_feature'})
+        model_trunc = create_feature_extractor(node.model, return_nodes={'net': 'semantic_feature'})
         #1 目标域
         data_loader_t = torch.utils.data.DataLoader(node.target_loader.dataset, batch_size=1, shuffle=False)
     encoding_array_ = []
@@ -404,8 +564,9 @@ def dimension_reduction(node, Data, round):
         feature = model_trunc(images)['semantic_feature'].squeeze().flatten().detach().cpu().numpy() # 执行前向预测，得到 avgpool 层输出的语义特征
         encoding_array_.append(feature)
     encoding_array_ = np.array(encoding_array_)
-    # 保存为本地的 npy 文件
-    np.save(os.path.join(node.args.save_path+'/save/', f'node{node.num}_{round}_clser目标域{Data.client[-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array_)
+    if node.args.save_model:
+        # 保存为本地的 npy 文件
+        np.save(os.path.join(node.args.save_path+'/save/', f'node{node.num}_{round}_clser目标域{Data.client[-1]}测试集语义特征_{node.args.dataset}.npy'), encoding_array_)
 
     print(f"目标域: {Data.client[-1]}, encoding_array_.len = {len(encoding_array_)}, labels_list_.len = {len(labels_list_)}")
 
@@ -444,12 +605,17 @@ def dimension_reduction(node, Data, round):
 
 # 计算距离矩阵
 def compute_distances(features, prototypes):
-    distances = torch.norm(torch.stack([f - prototypes for f in features]), dim=2)  
+    # print(features.shape)
+    # print(prototypes.shape)
+    distances = torch.norm(torch.stack([f - prototypes for f in features]), dim=2)
+    # print(distances.shape)
     # features = F.softmax(features, dim=1)
     # prototypes = F.softmax(prototypes, dim=1)
     # distances = torch.stack([F.kl_div(f.log(), prototypes, reduction='none').sum(dim=1) for f in features])
     
-    return torch.argmin(distances, dim=1)
+    res = torch.argmin(distances, dim=1)
+    # print(distances.shape)
+    return res
 
 def to_img(x, dataset):
     # from torchvision import transforms
@@ -463,7 +629,7 @@ def to_img(x, dataset):
         out = x.clamp(0, 1)  # Clamp函数可以将随机变化的数值限制在一个给定的区间[min, max]内：
         out = out.view(-1, 1, 28, 28)
     else:
-        out = out.view(-1, 3, 225, 225)  # view()函数作用是将一个多行的Tensor,拼接成一行
+        out = x.view(-1, 3, 225, 225)  # view()函数作用是将一个多行的Tensor,拼接成一行
     return out
 
 def LR_scheduler(rounds, Node_List, args, Global_node = None, logger=None):
@@ -498,7 +664,7 @@ def Summary(args, logger):
     logger.info("lr:{}, is pretrained:{}".format(args.lr, args.pretrained))
     logger.info("dataset:{}\tbatchsize:{}\tclasses:{}".format(args.dataset, args.batch_size, args.classes))
     logger.info("node_num:{},\tsplit:{}".format(args.node_num, args.split))
-    # print("iid:{},\tequal:{},\n".format(args.iid == 1, args.unequal == 0))
+    logger.info("iid:{}".format(args.iid == 1))
     logger.info("global epochs:{},\tlocal epochs:{}".format(args.R, args.E))
     logger.info("global_model:{},\tlocal model:{}".format(args.global_model, args.local_model))
 

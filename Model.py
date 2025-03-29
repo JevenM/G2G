@@ -8,7 +8,7 @@ from torch import optim
 import copy
 import random
 import torch
-
+import torch.distributions as distributions
 
 class LeNet5(nn.Module):
     def __init__(self):
@@ -187,19 +187,11 @@ def set_parameter_requires_grad(model, feature_extracting):
         for param in model.parameters():
             param.requires_grad = False
 
-
-
-
-
 class AlexNet(nn.Module):
     def __init__(self,args):
         super(AlexNet, self).__init__()
         alexnet_fetExtrac = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec)
         state_dict = torch.load("models/alexnet_caffe.pth.tar")
-
-        # for key, value in state_dict.items():
-        #     print(key, value.size())
-        # 这里修改
         del state_dict["classifier.6.weight"]
         del state_dict["classifier.6.bias"]
         alexnet_fetExtrac.load_state_dict(state_dict)
@@ -218,7 +210,7 @@ class AlexNet(nn.Module):
 
 
 class feature_extractor(nn.Module):
-    def __init__(self, optimizer,lr,momentum,weight_decay, num_classes=5):
+    def __init__(self, optimizer, lr,momentum,weight_decay, num_classes=5,hidden_size=4096):
         super(feature_extractor,self).__init__()
         self.num_classes = num_classes
         self.features = nn.Sequential(OrderedDict([
@@ -248,12 +240,12 @@ class feature_extractor(nn.Module):
             ("relu6", nn.ReLU(inplace=True)),
             ("drop6", nn.Dropout()),
 
-            ("4", nn.Linear(4096, 4096)),
+            ("4", nn.Linear(4096, hidden_size)),
             ("relu7", nn.ReLU(inplace=True)),
             ("drop7", nn.Dropout())
         ]))
 
-        self.optimizer = optimizer(list(self.features.parameters())+list(self.classifier.parameters()), lr=lr, momentum=momentum, weight_decay=weight_decay)
+        # self.optimizer = optimizer(list(self.features.parameters())+list(self.classifier.parameters()), lr=lr, momentum=momentum, weight_decay=weight_decay)
         self.initial_params()
 
     def initial_params(self):
@@ -261,29 +253,59 @@ class feature_extractor(nn.Module):
             if isinstance(layer,torch.nn.Linear):
                 init.xavier_uniform_(layer.weight,0.1)
                 layer.bias.data.zero_()
+    # def initial_params(self):
+    #     for layer in self.modules():
+    #         if isinstance(layer,torch.nn.Conv2d):
+    #             init.kaiming_normal_(layer.weight,a=0,mode='fan_in')
+    #             if layer.bias is not None:
+    #                 init.constant_(layer.bias, 0)
+    #         elif isinstance(layer,torch.nn.Linear):
+    #             init.kaiming_normal_(layer.weight)
+    #             if layer.bias is not None:
+    #                 init.constant_(layer.bias, 0)
+    #         elif isinstance(layer,torch.nn.BatchNorm2d) or isinstance(layer,torch.nn.BatchNorm1d):
+    #             layer.weight.data.fill_(1)
+    #             layer.bias.data.zero_()
 
     def forward(self, x):
-        x = self.features(x*57.6)
-        x = x.view((x.size(0),256*6*6))
-        x = self.classifier(x)
-        return x
+        f = self.features(x*57.6)
+        # f = self.features(x)
+        f = f.view((f.size(0),256*6*6))
+        o = self.classifier(f)
+        return o
 # classifier
 class task_classifier(nn.Module):
     def __init__(self, hidden_size, optimizer, lr, momentum, weight_decay, class_num=5):
         super(task_classifier,self).__init__()
         self.task_classifier = nn.Sequential()
-        self.task_classifier.add_module('t1_fc1', nn.Linear(hidden_size, hidden_size))
+        # self.task_classifier.add_module('t1_fc1', nn.Linear(hidden_size, hidden_size))
+        # self.task_classifier.add_module('t1_relu', nn.ReLU())
         self.task_classifier.add_module('t1_fc2', nn.Linear(hidden_size, class_num))
-        self.optimizer = optimizer(self.task_classifier.parameters(),
-                                   lr=lr, momentum=momentum, weight_decay=weight_decay)
+        # self.optimizer = optimizer(self.task_classifier.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
         self.initialize_paras()
 
+    # def initialize_paras(self):
+    #     for layer in self.modules():
+    #         if isinstance(layer,torch.nn.Conv2d):
+    #             init.kaiming_normal_(layer.weight,a=0,mode='fan_in')
+    #             if layer.bias is not None:
+    #                 init.constant_(layer.bias, 0)
+    #         elif isinstance(layer,torch.nn.Linear):
+    #             init.kaiming_normal_(layer.weight)
+    #             if layer.bias is not None:
+    #                 init.constant_(layer.bias, 0)
+    #         elif isinstance(layer,torch.nn.BatchNorm2d) or isinstance(layer,torch.nn.BatchNorm1d):
+    #             layer.weight.data.fill_(1)
+    #             layer.bias.data.zero_()
     def initialize_paras(self):
         for layer in self.modules():
-            if isinstance(layer,torch.nn.Conv2d):
-                init.kaiming_normal_(layer.weight,a=0,mode='fan-out')
-            elif isinstance(layer,torch.nn.Linear):
-                init.kaiming_normal_(layer.weight)
+            # if isinstance(layer,torch.nn.Conv2d):
+            #     init.kaiming_normal_(layer.weight,a=0,mode='fan_out')
+            # elif isinstance(layer,torch.nn.Linear):
+            #     init.kaiming_normal_(layer.weight)
+            if isinstance(layer,torch.nn.Linear) or isinstance(layer, nn.Linear):
+                init.xavier_uniform_(layer.weight,0.1)
+                layer.bias.data.zero_()
             elif isinstance(layer,torch.nn.BatchNorm2d) or isinstance(layer,torch.nn.BatchNorm1d):
                 layer.weight.data.fill_(1)
                 layer.bias.data.zero_()
@@ -307,6 +329,79 @@ def ResNet18(args):
     num_features=model.fc.in_features
     model.fc=nn.Linear(num_features,args.classes)
     return model
+
+class Flatten_1024(nn.Module):
+    def forward(self,x):
+        return x.view(-1, 1024)
+
+class BaseModel(nn.Module):
+    '''
+    FedSR: a network of two 3x3 convolutional layers and a fully connected layer as the representation network gθ 
+    to get a representation z of 64 dimensions. A single linear layer is then used to map the representation z to 
+    the ten output classes.
+    '''
+    def __init__(self, model_type, args):
+        super(BaseModel, self).__init__()
+        self.probabilistic = True if args.algorithm == 'fed_sr' else False
+        self.args = args
+        self.out_dim = 2*args.embedding_d if self.probabilistic else args.embedding_d
+        net = nn.Sequential()
+        if model_type == 'SmallCNN':
+            net = nn.Sequential(
+                nn.Conv2d(1, 32, kernel_size=5, stride=1, bias=False), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2, 2),
+                nn.Conv2d(32, 64, kernel_size=5, stride=1, bias=False), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2, 2),
+                Flatten_1024(),
+                nn.Linear(1024, self.out_dim)
+            )
+            torch.nn.init.xavier_uniform_(net[0].weight, 0.1)
+            torch.nn.init.xavier_uniform_(net[4].weight, 0.1)
+            net[9].bias.data.zero_()
+        elif model_type == 'Alexnet':
+            # weights=AlexNet_Weights.IMAGENET1K_V1
+            net = models.alexnet(pretrained=args.pretrained)
+            net.classifier[6] = nn.Linear(net.classifier[6].in_features,self.out_dim)
+        elif model_type == 'Resnet18':
+            net = models.resnet18(pretrained=args.pretrained)
+            net.fc = nn.Linear(net.fc.in_features,self.out_dim)
+        elif model_type == 'Resnet50':
+            net = models.resnet50(pretrained=args.pretrained)
+            net.fc = nn.Linear(net.fc.in_features,self.out_dim)
+        else:
+            raise NotImplementedError
+        
+
+        self.net = net
+        self.cls = nn.Linear(args.embedding_d, args.classes)
+
+    def featurize(self, x, num_samples=1, return_dist=False):
+        if not self.probabilistic:
+            return self.net(x)
+        else:
+            z_params = self.net(x)
+            z_mu = z_params[:,:self.args.embedding_d]
+            z_sigma = F.softplus(z_params[:,self.args.embedding_d:])
+            z_dist = distributions.Independent(distributions.normal.Normal(z_mu,z_sigma),1)
+            z = z_dist.rsample(torch.Size([num_samples])).view([-1, self.args.embedding_d])
+            
+            if return_dist:
+                return z, (z_mu,z_sigma)
+            else:
+                return z
+
+    def forward(self, x):
+        if not self.probabilistic:
+            feature = self.net(x)
+            out = self.cls(feature)
+            return feature, out
+        else:
+            if self.training:
+                z = self.featurize(x)
+                return z, self.cls(z)
+            else:
+                z = self.featurize(x,num_samples=20)
+                preds = torch.softmax(self.cls(z),dim=1)
+                preds = preds.view([20,-1,self.args.classes]).mean(0)
+                return torch.log(preds)    
 
 
 ## as baseline
@@ -354,24 +449,37 @@ class Generator(nn.Module):
         out = self.gen(out)
         return out
 
-class Generator1(nn.Module):
-    def __init__(self, num_classes=10, flat_img=784):
-        super(Generator1, self).__init__()
+class GeneratorFeature(nn.Module):
+    def __init__(self, latent_space=10, num_classes=10, embedding_d=1024):
+        super(GeneratorFeature, self).__init__()
         self.gen = nn.Sequential(
-            nn.Linear(flat_img+num_classes, 32),
-            nn.LeakyReLU(0.2),
+            nn.Linear(latent_space+num_classes, 16),
+            nn.ReLU(),
+            nn.Linear(16, 32),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
             nn.Linear(32, 64),
             nn.BatchNorm1d(64),
-            nn.LeakyReLU(0.2),
+            nn.ReLU(),
             nn.Linear(64, 128),
             nn.BatchNorm1d(128),
-            nn.LeakyReLU(0.2),
+            nn.ReLU(),
             nn.Linear(128, 256),
             nn.BatchNorm1d(256),
-            nn.LeakyReLU(0.2),
-            nn.Linear(256, flat_img),
+            nn.ReLU(),
+            nn.Linear(256, embedding_d),
             nn.Tanh()
         )
+        self.initial_params()
+
+    def initial_params(self):
+        for layer in self.modules():
+            if isinstance(layer,torch.nn.Linear):
+                init.xavier_uniform_(layer.weight,0.1)
+                layer.bias.data.zero_()
+            elif isinstance(layer,torch.nn.BatchNorm2d) or isinstance(layer,torch.nn.BatchNorm1d):
+                layer.weight.data.fill_(1)
+                layer.bias.data.zero_()
 
     def forward(self, x, y):
         out = torch.cat((x, y), dim=1)
@@ -382,78 +490,13 @@ class Flatten(nn.Module):
     def forward(self, x):
         return x.view(x.shape[0], -1)
 
-
-
-
-class MixStyle(nn.Module):
-    """MixStyle.
-    Reference:
-      Zhou et al. Domain Generalization with MixStyle. ICLR 2021.
-    """
-
-    def __init__(self, p=0.5, alpha=0.1, eps=1e-6, mix='random'):
-        """
-        Args:
-          p (float): probability of using MixStyle.
-          alpha (float): parameter of the Beta distribution.
-          eps (float): scaling parameter to avoid numerical issues.
-          mix (str): how to mix.
-        """
-        super().__init__()
-        self.p = p
-        self.beta = torch.distributions.Beta(alpha, alpha)
-        self.eps = eps
-        self.alpha = alpha
-        self.mix = mix
-        self._activated = True
-
-    def __repr__(self):
-        return f'MixStyle(p={self.p}, alpha={self.alpha}, eps={self.eps}, mix={self.mix})'
-
-    def set_activation_status(self, status=True):
-        self._activated = status
-
-    def update_mix_method(self, mix='random'):
-        self.mix = mix
+class SqueezeLastTwo(nn.Module):
+    """A module which squeezes the last two dimensions, ordinary squeeze can be a problem for batch size 1"""
+    def __init__(self):
+        super(SqueezeLastTwo, self).__init__()
 
     def forward(self, x):
-        if not self.training or not self._activated:
-            return x
-
-        if random.random() > self.p:
-            return x
-
-        B = x.size(0)
-
-        mu = x.mean(dim=[2, 3], keepdim=True)
-        var = x.var(dim=[2, 3], keepdim=True)
-        sig = (var + self.eps).sqrt()
-        mu, sig = mu.detach(), sig.detach()
-        x_normed = (x-mu) / sig
-
-        lmda = self.beta.sample((B, 1, 1, 1))
-        lmda = lmda.to(x.device)
-
-        if self.mix == 'random':
-            # random shuffle
-            perm = torch.randperm(B)
-
-        elif self.mix == 'crossdomain':
-            # split into two halves and swap the order
-            perm = torch.arange(B - 1, -1, -1) # inverse index
-            perm_b, perm_a = perm.chunk(2)
-            perm_b = perm_b[torch.randperm(B // 2)]
-            perm_a = perm_a[torch.randperm(B // 2)]
-            perm = torch.cat([perm_b, perm_a], 0)
-
-        else:
-            raise NotImplementedError
-
-        mu2, sig2 = mu[perm], sig[perm]
-        mu_mix = mu*lmda + mu2 * (1-lmda)
-        sig_mix = sig*lmda + sig2 * (1-lmda)
-
-        return x_normed*sig_mix + mu_mix
+        return x.view(x.shape[0], x.shape[1])
 
 
 
@@ -461,91 +504,108 @@ class MixStyle(nn.Module):
 class SimCLR(nn.Module):
     def __init__(self, args, in_channel):
         super(SimCLR, self).__init__()
+        self.args = args
         if args.dataset == 'rotatedmnist':
             self.encoder = nn.Sequential(
                 nn.Conv2d(in_channels=in_channel, out_channels=64, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm2d(64),
                 nn.ReLU(),
+                nn.GroupNorm(8, 64),
                 nn.MaxPool2d(kernel_size=2, stride=2),
                 nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm2d(128),
                 nn.ReLU(),
+                nn.GroupNorm(8, 128),
                 nn.MaxPool2d(kernel_size=2, stride=2),
-                # MixStyle(p=0.5, alpha=0.1),
                 nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=2, padding=1),
-                nn.BatchNorm2d(256),
                 nn.ReLU(),
-                nn.MaxPool2d(kernel_size=2, stride=2),
-                Flatten(),
-                # nn.Linear(1024, 1024),
-                # nn.ReLU(),
-                # nn.Linear(1024, 120),
-                # nn.ReLU()
+                nn.GroupNorm(8, 256),
+                nn.Conv2d(in_channels=256, out_channels=2*args.embedding_d, kernel_size=3, stride=2, padding=1),
+                nn.ReLU(),
+                nn.GroupNorm(8, 2*args.embedding_d),
+                nn.AdaptiveAvgPool2d((1,1)),
+                SqueezeLastTwo(),
             )
-            # self.encoder = nn.Sequential(
-            #     nn.Conv2d(in_channels=in_channel, out_channels=16, kernel_size=5, padding=2),
-            #     nn.BatchNorm2d(16),
-            #     nn.ReLU(),
-            #     nn.MaxPool2d(2), # 14x14x32
-            #     nn.Conv2d(in_channels=16, out_channels=32, kernel_size=5, padding=2),
-            #     nn.BatchNorm2d(32),
-            #     nn.ReLU(),
-            #     nn.MaxPool2d(2), # 7x7x64
-            #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2),
-            #     nn.BatchNorm2d(64),
-            #     nn.ReLU(),
-            #     nn.MaxPool2d(2), # 3X3x64
-            #     Flatten(),
-            #     nn.Linear(576, 1024),
-            #     nn.ReLU()
-            # )
+            # FedSR mediumcnn
+            # net = nn.Sequential(
+            #         nn.Conv2d(1, 64, 3, 1, padding=1),
+            #         nn.ReLU(),
+            #         nn.GroupNorm(8, 64),
+            #         nn.Conv2d(64, 128, 3, stride=2, padding=1),
+            #         nn.ReLU(),
+            #         nn.GroupNorm(8, 128),
+            #         nn.Conv2d(128, 128, 3, 1, padding=1),
+            #         nn.ReLU(),
+            #         nn.GroupNorm(8, 128),
+            #         nn.Conv2d(128, 1024, 3, 1, padding=1),
+            #         nn.ReLU(),
+            #         nn.GroupNorm(8, 1024),
+            #         nn.AdaptiveAvgPool2d((1,1)),
+            #         SqueezeLastTwo(),
+            #         )
+
             self.projection_head = nn.Sequential(
+                # nn.ReLU(),
+                nn.Linear(2*args.embedding_d, args.embedding_d),
                 nn.ReLU(),
-                nn.Linear(1024, args.embedding_d),
             )
             self.prediction = nn.Sequential(
-                nn.ReLU(),
-                nn.Dropout(0.5),
+                # nn.ReLU(),
                 nn.Linear(args.embedding_d, args.classes)
             )
+            self.classifier = nn.Sequential(self.projection_head, self.prediction)
+            # self.cls = nn.Linear(args.embedding_d, args.classes)
+            self.initial_params()
         else:
-            self.encoder = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec)
+            self.encoder = feature_extractor(optim.SGD, args.lr0, args.momentum, args.weight_dec, args.classes)
             state_dict = torch.load("models/alexnet_caffe.pth.tar")
             del state_dict["classifier.6.weight"]
             del state_dict["classifier.6.bias"]
             self.encoder.load_state_dict(state_dict)
 
             self.projection_head = nn.Sequential(OrderedDict([
-                ("1", nn.Linear(4096, 4096)),
-                ("relu6", nn.ReLU(inplace=True)),
+                ("1", nn.Linear(args.hidden_size, args.hidden_size//2)),
+                ("relu6", nn.ReLU()),
                 ("drop6", nn.Dropout()),
-
-                ("4", nn.Linear(4096, args.embedding_d)),
-                ("relu7", nn.ReLU(inplace=True)),
+                # ("id", nn.Identity()),
+                ("4", nn.Linear(args.hidden_size//2, args.hidden_size)),
+                ("relu7", nn.ReLU()),
                 ("drop7", nn.Dropout())
             ]))
-
-        self.initial_params()
+            self.prediction = task_classifier(args.hidden_size, optim.SGD, args.lr0, args.momentum, args.weight_dec,
+                                                class_num=args.classes)
+            self.cls = nn.Linear(args.embedding_d, args.classes)
+            self.classifier = nn.Sequential(self.projection_head, self.prediction)
 
     def initial_params(self):
         for layer in self.modules():
-            if isinstance(layer,torch.nn.Linear):
+            if isinstance(layer,torch.nn.Linear) or isinstance(layer, nn.Linear):
                 init.xavier_uniform_(layer.weight,0.1)
                 layer.bias.data.zero_()
 
+    def featurize(self,x,num_samples=1,return_dist=False):
+        z_params = self.encoder(x)
+        z_mu = z_params[:,:self.args.embedding_d]
+        z_sigma = F.softplus(z_params[:,self.args.embedding_d:])
+        z_dist = distributions.Independent(distributions.normal.Normal(z_mu,z_sigma),1)
+        z = z_dist.rsample(torch.Size([num_samples])).view([-1,self.args.embedding_d])
+        
+        if return_dist:
+            return z, (z_mu,z_sigma)
+        else:
+            return z
+
     def forward(self, x):
         feature = self.encoder(x)
-        # feature = x.view((x.size(0), -1))
         embeddings = self.projection_head(feature)
         out = self.prediction(embeddings)
         return feature, embeddings, out
+        
 
 
 class Discriminator(nn.Module):
     def __init__(self, flat_img, num_classes):
         super(Discriminator, self).__init__()
         self.dis = nn.Sequential(
-            nn.Linear(flat_img+num_classes, 128),  # 输入特征数为784，输出为512
+            nn.Linear(flat_img+num_classes, 128),
             nn.BatchNorm1d(128),
             nn.LeakyReLU(0.2),  # 进行非线性映射
             nn.Linear(128, 64),  # 进行一个线性映射
@@ -575,6 +635,42 @@ class Discriminator2(nn.Module):
     def forward(self, x):
         x = self.dis(x)
         return x
+
+class DiscriminatorFeature(nn.Module):
+    def __init__(self, latent_space, num_classes):
+        super(DiscriminatorFeature, self).__init__()
+        self.dis = nn.Sequential(
+            nn.Linear(latent_space+num_classes, 128),
+            nn.BatchNorm1d(128),
+            nn.LeakyReLU(0.2),  # 进行非线性映射
+            nn.Linear(128, 64),  # 进行一个线性映射
+            nn.BatchNorm1d(64),
+            nn.LeakyReLU(0.2),
+            nn.Linear(64, 1)
+        )
+
+    def forward(self, x, y):
+        x = torch.cat((x, y), dim=1)
+        x = self.dis(x)
+        return x
+
+class DiscriminatorFeature2(nn.Module):
+    def __init__(self, latent_space):
+        super(DiscriminatorFeature2, self).__init__()
+        self.dis = nn.Sequential(
+            nn.Linear(latent_space, latent_space//2),  # 输入特征数为784，输出为512
+            nn.BatchNorm1d(latent_space//2),
+            nn.ReLU(),
+            nn.Linear(latent_space//2, latent_space//4),  # 进行一个线性映射
+            nn.BatchNorm1d(latent_space//4),
+            nn.ReLU(),
+            nn.Linear(latent_space//4, 1)
+        )
+
+    def forward(self, x):
+        x = self.dis(x)
+        return x
+
 
 class Classifier(torch.nn.Module):
     def __init__(self, args, simclr_model, num_class=5):

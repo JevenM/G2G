@@ -1,20 +1,22 @@
 import torch
 import h5py
+import os
+import numpy as np
+from PIL.Image import BICUBIC
 from PIL import Image,ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 from torch.utils import data
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, random_split, TensorDataset
-from torchvision.transforms.functional import rotate
-from torch.utils.data import DataLoader, Sampler, Subset
+from torch.utils.data import DataLoader, random_split, TensorDataset, Dataset, Subset, ConcatDataset
 from torchvision import datasets, transforms
-import random
-from collections import defaultdict
+from sklearn.model_selection import train_test_split
+from torchvision.datasets import ImageFolder
 
+DATA_PATH = os.path.abspath("/data/mwj/data")
 
 class Data(object):
-    def __init__(self, args, logger):
+    def __init__(self, args, logger, ):
         self.args = args
         iteration = args.iteration
         client = None
@@ -35,7 +37,7 @@ class Data(object):
             if iteration == 5:
                 client = [75, 0, 15, 30, 45, 60]
             if client is not None:
-                self.train_loader, self.test_loader,self.target_loader, self.classes, self.class_to_idx = get_rmnist_loaders(args,client,logger) 
+                self.train_loader, self.test_loader,self.target_loader, self.classes, self.class_to_idx = get_rmnist_loaders(args, client, logger) 
 
         if args.dataset == 'pacs':
             self.trainset, self.testset = None, None
@@ -48,8 +50,10 @@ class Data(object):
             if iteration == 3:
                 client=[ 'photo','cartoon','art_painting','sketch']
             if client is not None:
-                self.train_loader, self.test_loader,self.target_loader = get_pacs_loaders(args,client) 
-
+                if args.iid == 0:
+                    self.train_loader, self.test_loader, self.target_loader, self.classes, self.class_to_idx = get_pacs_loaders(args, client, logger) 
+                elif args.iid == 1:
+                    self.train_loader, self.test_loader, self.target_loader, self.classes, self.class_to_idx = partition_data(args, client, "iid", 0.1, logger)
 
         if args.dataset == 'vlcs':
             if iteration == 0:
@@ -61,19 +65,25 @@ class Data(object):
             if iteration == 3:
                 client=['LabelMe','Caltech101','VOC2007','SUN09']
             if client is not None:
-                self.train_loader, self.test_loader,self.target_loader, self.target_data = get_vlcs_loaders(args, client, logger)
+                if args.iid == 0:
+                    self.train_loader, self.test_loader, self.target_loader, self.classes, self.class_to_idx = get_vlcs_loaders(args, client, logger)
+                elif args.iid == 1:
+                    self.train_loader, self.test_loader, self.target_loader, self.classes, self.class_to_idx = partition_data(args, client, "iid", 0.1, logger)
                                                                
         if args.dataset == 'office-home':
             if iteration == 0:
                 client=['Real World','Product','Clipart','Art']                                                                                                 
             if iteration == 1:
-                client=[ 'Real World','Product','Art','Clipart']                                      
+                client=['Real World','Product','Art','Clipart']                                      
             if iteration == 2:
                 client=['Real World','Art','Clipart', 'Product']                          
             if iteration == 3:
                 client=['Clipart', 'Art','Product','Real World']
             if client is not None:
-                self.train_loader, self.test_loader,self.target_loader = get_office_loaders(args,client)
+                if args.iid == 0:
+                    self.train_loader, self.test_loader, self.target_loader, self.classes, self.class_to_idx = get_office_loaders(args, client, logger)
+                elif args.iid == 1:
+                    self.train_loader, self.test_loader, self.target_loader, self.classes, self.class_to_idx = partition_data(args, client, "iid", 0.1, logger)
         self.client = client
         logger.info('CLIENT_ORDER{}'.format(client))
 
@@ -132,8 +142,7 @@ class RotatedMNIST(MultipleEnvironmentMNIST):
     def rotate_dataset(self, images, labels, angle):
         rotation = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.Lambda(lambda x: rotate(x, angle, fill=(0,))),
-                                            #    resample=Image.BICUBIC)),
+            transforms.Lambda(lambda x: x.rotate(angle, fill=(0,), resample=Image.BICUBIC)),
             transforms.ToTensor()])
 
         x = torch.zeros(len(images), 1, 28, 28)
@@ -144,13 +153,64 @@ class RotatedMNIST(MultipleEnvironmentMNIST):
 
         return TensorDataset(x, y)
 
+class MultipleEnvironmentMNIST1000(MultipleDomainDataset):
+    def __init__(self, root, environments, dataset_transform, input_shape,
+                 num_classes, mnist_subset):
+        super().__init__()
+        if root is None:
+            raise ValueError('Data directory not specified!')
 
-class Loader_dataset(data.Dataset):
+        # mnist_subset = np.random.choice(10)
+        print('random select a batch of mnist_subset', mnist_subset)
+        indices = np.load(os.path.join('datasets/VLCS/dataset/supervised_inds_' + str(mnist_subset) + '.npy'))
+
+        original_dataset = datasets.MNIST(root, train=True, download=True)
+
+        original_images = original_dataset.data
+
+        original_labels = original_dataset.targets
+
+        original_images = original_images[indices]
+        original_labels = original_labels[indices]
+
+        self.datasets = []
+        self.classes = original_dataset.classes
+        self.class_to_idx = original_dataset.class_to_idx
+
+        for i in range(len(environments)):
+            self.datasets.append(dataset_transform(original_images, original_labels, environments[i]))
+
+        self.input_shape = input_shape
+        self.num_classes = num_classes
+
+class RotatedMNIST1000(MultipleEnvironmentMNIST1000):
+    def __init__(self, root, environments, mnist_subset):
+        super(RotatedMNIST1000, self).__init__(root, environments,
+                                           self.rotate_dataset, (1, 28, 28,), 10, mnist_subset)
+
+    def rotate_dataset(self, images, labels, angle):
+        rotation = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Lambda(lambda x: x.rotate(angle, fillcolor=(0,), resample=BICUBIC)),
+            transforms.ToTensor()])
+
+        x = torch.zeros(len(images), 1, 28, 28)
+        for i in range(len(images)):
+            x[i] = rotation(images[i])
+
+        y = labels.view(-1)
+
+        return TensorDataset(x, y)
+
+class Loader_dataset(Dataset):
     def __init__(self, path, tranforms = None):
         self.path = path
         self.dataset = datasets.ImageFolder(path, transform=tranforms)
         self.length = self.dataset.__len__()
         self.transform = tranforms
+        self.classes = self.dataset.classes
+        self.class_to_idx = self.dataset.class_to_idx
+        self.targets = self.dataset.targets
 
     def __len__(self):
         return self.length
@@ -227,7 +287,8 @@ class UniqueLabelSampler(Sampler):
 '''
 
 def get_rmnist_loaders(args, client, logger):
-    data = eval("RotatedMNIST")(root="/data/mwj/dataset/", environments=client)
+    # 参考FedSR中所说，only 1000 images are rotated to form the domain
+    data = eval("RotatedMNIST1000")(root="/data/mwj/data/", environments=client, mnist_subset=args.mnist_subset)
     train_datas, train_loaders = {}, {}
     valid_datas, valid_loaders = {}, {}
     target_domain_idx = len(client)-1
@@ -249,7 +310,7 @@ def get_rmnist_loaders(args, client, logger):
         valid_loaders[s_domain_idx] = DataLoader(valid_datas[s_domain_idx], batch_size=args.batch_size, shuffle=False, num_workers=args.workers,pin_memory=args.pin)
 
     logger.info(f"unseen domain: {client[target_domain_idx]}")
-    target_data = data.datasets[target_domain_idx] #30度
+    target_data = data.datasets[target_domain_idx] 
     target_loader = DataLoader(target_data, batch_size=args.batch_size, shuffle=False, num_workers=args.workers,pin_memory=args.pin)
     # logger.info(f'client list: {client}')
     return train_loaders, valid_loaders, target_loader, data.classes, data.class_to_idx
@@ -268,27 +329,34 @@ def get_vlcs_loaders(args, client, logger):
     train_path, valid_path = {}, {}
     train_datas, train_loaders = {}, {}
     valid_datas, valid_loaders = {}, {}
+    classes_name = None
+    class_to_idx = None
     for i in range(3):
         train_path[i] = path_root + client[i] + '/train'
         train_datas[i] = Loader_dataset(path=train_path[i], tranforms=trans0)
+        if classes_name is None:
+            classes_name = train_datas[i].classes
+            class_to_idx = train_datas[i].class_to_idx
         train_loaders[i] = DataLoader(train_datas[i], args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
 
         valid_path[i] = path_root + client[i] + '/val'
         valid_datas[i] = Loader_dataset(path=valid_path[i], tranforms=trans1)
-        valid_loaders[i] = DataLoader(valid_datas[i], args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
+        valid_loaders[i] = DataLoader(valid_datas[i], args.batch_size, False, num_workers=args.workers,pin_memory=args.pin)
     target_path = path_root + client[3] + '/val'
     logger.info(f"unseen domain: {client[3]}")
     target_data = Loader_dataset(target_path, trans1)
-    target_loader = DataLoader(target_data, args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
+    target_loader = DataLoader(target_data, args.batch_size, False, num_workers=args.workers,pin_memory=args.pin)
     # logger.info(f'client list: {client}')
-    return train_loaders, valid_loaders, target_loader, target_data.dataset
+    return train_loaders, valid_loaders, target_loader, classes_name, class_to_idx
 
-class Loader_dataset_pacs(data.Dataset):
+class Loader_dataset_pacs(Dataset):
     def __init__(self, path, tranforms):
         self.path = path
         hdf = h5py.File(self.path, 'r')
         self.length = len(hdf['labels'])   # <KeysViewHDF5 ['images', 'labels']>
         self.transform = tranforms
+        self.targets = [x - 1 for x in hdf['labels'][:]]
+        # print(f"tatrttttttt{self.targets}")
         hdf.close()
 
     def __len__(self):
@@ -302,8 +370,8 @@ class Loader_dataset_pacs(data.Dataset):
         data = self.transform(data_pil)
         return data, torch.tensor(y).long().squeeze()-1
 
-def get_pacs_loaders(args, client = ['cartoon', 'sketch',  'art_painting','photo']):
-    path_root = 'datasets/PACS/'
+def get_pacs_loaders(args, client, logger):
+    path_root = DATA_PATH+'/PACS_hdf5/'
     trans0 = transforms.Compose([transforms.RandomResizedCrop(222, scale=(0.7, 1.0)),
                                  transforms.RandomHorizontalFlip(),
                                  transforms.RandomGrayscale(),
@@ -321,15 +389,138 @@ def get_pacs_loaders(args, client = ['cartoon', 'sketch',  'art_painting','photo
         train_loaders[i] = DataLoader(train_datas[i], args.batch_size, True, num_workers=args.workers, pin_memory=args.pin)
         valid_path[i] = path_root + client[i] + '_val.hdf5'
         valid_datas[i] = Loader_dataset_pacs(path=valid_path[i], tranforms=trans1)
-        valid_loaders[i] = DataLoader(valid_datas[i], args.batch_size, True, num_workers=args.workers, pin_memory=args.pin)
+        valid_loaders[i] = DataLoader(valid_datas[i], args.batch_size, False, num_workers=args.workers, pin_memory=args.pin)
     target_path = path_root + client[3] + '_test.hdf5'
+    logger.info(f"unseen domain: {client[3]}")
     target_data = Loader_dataset_pacs(target_path, trans1)
-    target_loader = DataLoader(target_data, args.batch_size, True, num_workers=args.workers, pin_memory=args.pin)
-    return train_loaders, valid_loaders, target_loader
+    target_loader = DataLoader(target_data, args.batch_size, False, num_workers=args.workers, pin_memory=args.pin)
+    class_to_idx = {
+                    'dog': 0,
+                    'elephant': 1,
+                    'giraffe': 2,
+                    'guitar': 3,
+                    'horse': 4,
+                    'house': 5,
+                    'person': 6,
+                }
+    classes = {
+                'dog',
+                'elephant',
+                'giraffe',
+                'guitar',
+                'horse',
+                'house',
+                'person',
+            }
+    return train_loaders, valid_loaders, target_loader, classes, class_to_idx
 
+class PACS(Dataset):
+    '''
+    https://blog.csdn.net/qq_43827595/article/details/121345640
+    '''
+    def __init__(self, root_path, domain, train=True, transform=None, target_transform=None):
+        self.root = f"{root_path}/{domain}"
+        self.train = train
+        self.transform = transform
+        self.target_transform = target_transform
 
-def get_office_loaders(args, client):
-    path_root = 'datasets/OfficeHome/'
+        label_name_list = os.listdir(self.root)
+        self.label = []
+        self.data = []
+        self.label_name_2_index = {
+                    'dog': 0,
+                    'elephant': 1,
+                    'giraffe': 2,
+                    'guitar': 3,
+                    'horse': 4,
+                    'house': 5,
+                    'person': 6,
+                }
+        self.classes = {
+                    '0 - dog',
+                    '1- elephant',
+                    '2- giraffe',
+                    '3- guitar',
+                    '4- horse',
+                    '5- house',
+                    '6- person',
+                }
+
+        if not os.path.exists(f"{root_path}/precessed"):
+            os.makedirs(f"{root_path}/precessed")
+        if os.path.exists(f"{root_path}/precessed/{domain}_data.pt") and os.path.exists(
+                f"{root_path}/precessed/{domain}_label.pt"):
+            print(f"Load {domain} data and label from cache.")
+            self.data = torch.load(f"{root_path}/precessed/{domain}_data.pt")
+            self.label = torch.load(f"{root_path}/precessed/{domain}_label.pt")
+        else:
+            print(f"Getting {domain} datasets")
+            for index, label_name in enumerate(label_name_list):
+                images_list = os.listdir(f"{self.root}/{label_name}")
+                for img_name in images_list:
+                    img = Image.open(f"{self.root}/{label_name}/{img_name}").convert('RGB')
+                    img = np.array(img)
+                    self.label.append(self.label_name_2_index[label_name])
+                    if self.transform is not None:
+                        img = self.transform(img)
+                    self.data.append(img)
+            self.data = torch.stack(self.data)
+            self.label = torch.tensor(self.label, dtype=torch.long)
+            torch.save(self.data, f"{root_path}/precessed/{domain}_data.pt")
+            torch.save(self.label, f"{root_path}/precessed/{domain}_label.pt")
+
+    def __getitem__(self, index):
+        img, target = self.data[index], self.label[index]
+
+        if self.transform is not None:
+            img = self.transform(img)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return img, target
+
+    def __len__(self):
+        return len(self.data)
+
+# 自己写的，参考https://blog.csdn.net/qq_43827595/article/details/121345640
+# 功能可以替代get_pacs_loaders，读取原始图像，划分训练集(0.8,0.2)
+def get_pacs_domain(args, domains, logger):
+    root_path=f"{DATA_PATH}/PACS"
+    transform = transforms.Compose([transforms.RandomResizedCrop(222, scale=(0.7, 1.0)),
+                                 transforms.RandomHorizontalFlip(),
+                                 transforms.RandomGrayscale(),
+                                 transforms.ToTensor(),
+                                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+    trans1 = transforms.Compose([transforms.Resize([222, 222]),
+                                 transforms.ToTensor(),
+                                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+    # 一个domain的数据获取
+    # all_data = PACS(root_path, domain, transform=transform)
+    # train:test=8:2
+    # x_train, x_test, y_train, y_test = train_test_split(all_data.data.numpy(), all_data.label.numpy(),
+    #                                                     test_size=0.20, random_state=42)
+
+    # return x_train, y_train, x_test, y_test
+    target_domain_idx = len(domains)-1
+    train_datas, train_loaders = {}, {}
+    valid_datas, valid_loaders = {}, {}
+    for s_domain_idx in range(3):
+        dataset = PACS(root_path, domains[s_domain_idx], transform=transform)
+        test_len = int(len(dataset) * 0.9)
+        train_datas[s_domain_idx], valid_datas[s_domain_idx] = random_split(dataset, [1-test_len,test_len], generator=torch.Generator().manual_seed(0))
+        train_loaders[s_domain_idx] = DataLoader(train_datas[s_domain_idx], args.batch_size, True, num_workers=args.workers, pin_memory=args.pin)
+        valid_loaders[s_domain_idx] = DataLoader(valid_datas[s_domain_idx], args.batch_size, True, num_workers=args.workers, pin_memory=args.pin)
+
+    logger.info(f"unseen domain: {domains[target_domain_idx]}")
+    target_data = PACS(root_path, domains[target_domain_idx], transform=trans1)
+    target_loader = DataLoader(target_data, batch_size=args.batch_size, shuffle=False, num_workers=args.workers,pin_memory=args.pin)
+    return train_loaders, valid_loaders, target_loader, target_data.classes, target_data.label_name_2_index
+
+def get_office_loaders(args, client, logger):
+    # path_root = 'datasets/OfficeHome/'
+    # 参考FedSR中所说，only 1000 images are rotated to form the domain
+    data = eval("OfficeHome")(root="/data/mwj/data/", test_envs=client[-1])
+    target_domain_idx = len(client)-1
     trans0 = transforms.Compose([transforms.RandomResizedCrop(225, scale=(0.7, 1.0)),
                                  transforms.RandomHorizontalFlip(),
                                  transforms.RandomGrayscale(),
@@ -341,15 +532,315 @@ def get_office_loaders(args, client):
     train_path, valid_path = {}, {}
     train_datas, train_loaders = {}, {}
     valid_datas, valid_loaders = {}, {}
-    for i in range(3):
-        train_path[i] = path_root + client[i] + '/train'
-        train_datas[i] = Loader_dataset(path=train_path[i], tranforms=trans0)
-        train_loaders[i] = DataLoader(train_datas[i], args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
+    for s_domain_idx in range(target_domain_idx):
+        dataset = data.datasets[s_domain_idx]
+        # train_path[i] = path_root + client[i] + '/train'
+        train_len = int(len(dataset) * 0.9)
+        test_len = len(dataset) - train_len
+        # print(train_len, test_len)
+        train_datas[s_domain_idx], valid_datas[s_domain_idx] = random_split(dataset, [train_len,test_len], generator=torch.Generator().manual_seed(0))
+        # train_datas[i] = Loader_dataset(path=train_path[i], tranforms=trans0)
+        train_loaders[s_domain_idx] = DataLoader(train_datas[s_domain_idx], args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
+        valid_loaders[s_domain_idx] = DataLoader(valid_datas[s_domain_idx], args.batch_size, False, num_workers=args.workers,pin_memory=args.pin)
 
-        valid_path[i] = path_root + client[i] + '/val'
-        valid_datas[i] = Loader_dataset(path=valid_path[i], tranforms=trans1)
-        valid_loaders[i] = DataLoader(valid_datas[i], args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
-    target_path = path_root + client[3] + '/val'
-    target_data = Loader_dataset(target_path, trans1)
-    target_loader = DataLoader(target_data, args.batch_size, True, num_workers=args.workers,pin_memory=args.pin)
-    return train_loaders, valid_loaders, target_loader  
+        # valid_path[i] = path_root + client[i] + '/val'
+        # valid_datas[i] = Loader_dataset(path=valid_path[i], tranforms=trans1)
+        # valid_loaders[i] = DataLoader(valid_datas[i], args.batch_size, False, num_workers=args.workers,pin_memory=args.pin)
+    # target_path = path_root + client[3] + '/val'
+    logger.info(f"unseen domain: {client[target_domain_idx]}")
+    target_data = data.datasets[target_domain_idx] 
+    # target_data = Loader_dataset(target_path, trans1)
+    target_loader = DataLoader(target_data, args.batch_size, False, num_workers=args.workers,pin_memory=args.pin)
+    
+    return train_loaders, valid_loaders, target_loader, data.classes, data.class_to_idx
+
+
+class MultipleEnvironmentImageFolder(MultipleDomainDataset):
+    def __init__(self, root, test_envs, augment):
+        super().__init__()
+        environments = [f.name for f in os.scandir(root) if f.is_dir()]
+        environments = sorted(environments)
+
+        self.transform = transforms.Compose([
+            transforms.Resize((224,224)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+        self.augment_transform = transforms.Compose([
+            # transforms.Resize((224,224)),
+            transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(0.3, 0.3, 0.3, 0.3),
+            transforms.RandomGrayscale(),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+        self.datasets = []
+        for i, environment in enumerate(environments):
+
+            if augment and environment != test_envs:
+                env_transform = self.augment_transform
+            else:
+                env_transform = self.transform
+
+            path = os.path.join(root, environment)
+            env_dataset = ImageFolder(path,
+                transform=env_transform)
+
+            self.datasets.append(env_dataset)
+
+        self.input_shape = (3, 224, 224,)
+        
+        self.classes = self.datasets[-1].classes
+        self.num_classes = len(self.classes)
+        self.class_to_idx = self.datasets[-1].class_to_idx
+
+class OfficeHome(MultipleEnvironmentImageFolder):
+    ENVIRONMENTS = ["A", "C", "P", "R"]
+    def __init__(self, root, test_envs, augment=True):
+        self.dir = os.path.join(root, "OfficeHome/OfficeHomeDataset_10072016/")
+        super().__init__(self.dir, test_envs, augment)
+
+
+# ------------------------------------------start 来自 Federated Generative Learning with Foundation Models--------------------------------------
+def record_net_data_stats(y_train, net_dataidx_map, logger, classes):
+    net_cls_counts = {}
+
+    for net_i, dataidx in net_dataidx_map.items():  # label:sets
+        unq, unq_cnt = np.unique(y_train[dataidx], return_counts=True)  # 去除数组中的重复数字，并进行排序之后输出。
+        tmp = {unq[i]: unq_cnt[i] for i in range(len(unq))}
+        for i in range(classes):
+            if i in tmp.keys():
+                continue
+            else:
+                tmp[i] = 0
+
+        net_cls_counts[net_i] = tmp
+
+    logger.info(f'Data statistics: {str(net_cls_counts)}')
+
+    return net_cls_counts
+
+def get_dataset_VLCS(domains_name=[]):
+    path_root = './datasets/VLCS/VLCS/'
+
+    trans0 = transforms.Compose([transforms.RandomResizedCrop(225, scale=(0.7, 1.0)),
+                                 transforms.RandomHorizontalFlip(),
+                                 transforms.RandomGrayscale(),
+                                 transforms.ToTensor(),
+                                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+    trans1 = transforms.Compose([transforms.Resize([225, 225]),
+                                 transforms.ToTensor(),
+                                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+    train_path, valid_path = {}, {}
+    train_datas_list = []
+    valid_datas_list = []
+    classes_name = None
+    class_to_idx = None
+    for i in range(3):
+        train_path[i] = path_root + domains_name[i] + '/train'
+        train_datas_list.append(Loader_dataset(path=train_path[i], tranforms=trans0))
+        if classes_name is None:
+            classes_name = train_datas_list[i].classes
+            class_to_idx = train_datas_list[i].class_to_idx
+
+        valid_path[i] = path_root + domains_name[i] + '/val'
+        valid_datas_list.append(Loader_dataset(path=valid_path[i], tranforms=trans1))
+
+    target_path = path_root + domains_name[3] + '/val'
+    print(f"unseen domain: {domains_name[3]}")
+    target_datas = Loader_dataset(target_path, trans1)
+
+    return train_datas_list, valid_datas_list, target_datas, classes_name, class_to_idx
+
+def get_dataset_PACS(domains_name=[]):
+    path_root = DATA_PATH+'/PACS_hdf5/'
+    trans0 = transforms.Compose([transforms.RandomResizedCrop(222, scale=(0.7, 1.0)),
+                            transforms.RandomHorizontalFlip(),
+                            transforms.RandomGrayscale(),
+                            transforms.ToTensor(),
+                            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+    trans1 = transforms.Compose([transforms.Resize([222, 222]),
+                            transforms.ToTensor(),
+                            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+    train_path, valid_path = {}, {}
+    train_datas_list = []
+    valid_datas_list = []
+
+    for i in range(3):
+        train_path[i] = path_root + domains_name[i] + '_train.hdf5'
+        train_datas_list.append(Loader_dataset_pacs(path=train_path[i], tranforms=trans0))
+        valid_path[i] = path_root + domains_name[i] + '_val.hdf5'
+        valid_datas_list.append(Loader_dataset_pacs(path=valid_path[i], tranforms=trans1))
+
+    target_path = path_root + domains_name[3] + '_test.hdf5'
+    print(f"unseen domain: {domains_name[3]}")
+    target_datas = Loader_dataset_pacs(target_path, trans1)
+
+    class_to_idx = {
+                    'dog': 0,
+                    'elephant': 1,
+                    'giraffe': 2,
+                    'guitar': 3,
+                    'horse': 4,
+                    'house': 5,
+                    'person': 6,
+                }
+    classes_name = {
+                'dog',
+                'elephant',
+                'giraffe',
+                'guitar',
+                'horse',
+                'house',
+                'person',
+            }
+
+    return train_datas_list, valid_datas_list, target_datas, classes_name, class_to_idx
+
+def get_dataset_office_home(domains_name=[]):
+    data = eval("OfficeHome")(root="/data/mwj/data/", test_envs=domains_name[-1])
+    target_domain_idx = len(domains_name)-1
+
+    train_datas = []
+    valid_datas = []
+    for s_domain_idx in range(target_domain_idx):
+        dataset = data.datasets[s_domain_idx]
+        train_len = int(len(dataset) * 0.9)
+        test_len = len(dataset) - train_len
+        td, vd = random_split(dataset, [train_len,test_len], generator=torch.Generator().manual_seed(0))
+        train_datas.append(td)
+        valid_datas.append(vd)
+    print(f"unseen domain: {domains_name[target_domain_idx]}")
+    target_data = data.datasets[target_domain_idx] 
+
+    return train_datas, valid_datas, target_data, data.classes, data.class_to_idx
+
+
+def get_dataset(data_type='vlcs', domains=['SUN09', 'Caltech101', 'LabelMe', 'VOC2007']):
+    classes_name, class_to_idx = None, None
+    
+    # get real VLCS dataset
+    if data_type == "vlcs":
+        trainset_list, valset_list, target_dataset, classes_name, class_to_idx = get_dataset_VLCS(domains_name=domains)
+    # get real PACS dataset
+    elif data_type == "pacs":
+        trainset_list, valset_list, target_dataset, classes_name, class_to_idx = get_dataset_PACS(domains_name=domains)
+    elif data_type == "office-home":
+        trainset_list, valset_list, target_dataset, classes_name, class_to_idx = get_dataset_office_home(domains_name=domains)
+    train_dataset = ConcatDataset(trainset_list)
+    val_dataset = ConcatDataset(valset_list)
+
+    return train_dataset, val_dataset, target_dataset, classes_name, class_to_idx
+
+
+class CustomDataset(Dataset):
+    def __init__(self, images, labels):
+        self.images = images
+        self.labels = labels
+        
+    def __len__(self):
+        return len(self.images)
+    
+    def __getitem__(self, idx):
+        image = self.images[idx]
+        label = self.labels[idx]
+        # return image, label
+        return torch.from_numpy(image).float(), torch.tensor(label)
+
+class DatasetSplit(Dataset):
+    """An abstract Dataset class wrapped around Pytorch Dataset class.
+    """
+
+    def __init__(self, dataset, idxs):
+        self.dataset = dataset
+        self.idxs = [int(i) for i in idxs]
+
+    def __len__(self):
+        return len(self.idxs)
+
+    def __getitem__(self, item):
+        image, label = self.dataset[self.idxs[item]]
+        return image, label
+
+# 改编来自 Federated Generative Learning with Foundation Models
+def load_data(args, client):
+    train_dataset, val_dataset, target_dataset, classes_name, class_to_idx = get_dataset(data_type=args.dataset, domains=client)
+    trainloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
+    testloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
+    X_train, y_train = [], []
+    # for data in trainloader:
+    for batch_idx, (inputs, targets) in enumerate(trainloader):
+        X_train.append(inputs.numpy())
+        y_train.append(targets.numpy())
+    
+    X_train = np.concatenate(X_train, axis=0)
+    y_train = np.concatenate(y_train, axis=0)
+
+    X_test, y_test = [], []
+    # for data in trainloader:
+    for batch_idx, (inputs, targets) in enumerate(testloader):
+        X_test.append(inputs.numpy())
+        y_test.append(targets.numpy())
+    
+    X_test = np.concatenate(X_test, axis=0)
+    y_test = np.concatenate(y_test, axis=0)
+
+    train_dataset = CustomDataset(X_train, y_train)
+    test_dataset = CustomDataset(X_test, y_test)
+
+    return X_train, y_train, X_test, y_test, train_dataset, test_dataset, target_dataset, classes_name, class_to_idx
+
+# 来自 Federated Generative Learning with Foundation Models
+def partition_data(args, client, partition, beta=0.1, logger=None):
+    _, y_train, _, y_test, train_dataset, val_dataset, target_dataset, classes_name, class_to_idx = load_data(args, client)
+    data_size = y_train.shape[0]
+    val_data_size = y_test.shape[0]
+
+    n_parties = args.node_num
+    if partition == "iid":
+        idxs = np.random.permutation(data_size)
+        batch_idxs = np.array_split(idxs, n_parties)
+        net_dataidx_map = {i: batch_idxs[i] for i in range(n_parties)}
+        val_idxs = np.random.permutation(val_data_size)
+        val_batch_idxs = np.array_split(val_idxs, n_parties)
+        val_net_dataidx_map = {i: val_batch_idxs[i] for i in range(n_parties)}
+
+    elif partition == "dirichlet":
+        min_size = 0
+        min_require_size = 10
+        label = np.unique(y_test).shape[0]
+        net_dataidx_map = {}
+        while min_size < min_require_size:
+            idx_batch = [[] for _ in range(n_parties)]
+            for k in range(label):
+                idx_k = np.where(y_train == k)[0]
+                np.random.shuffle(idx_k)  # shuffle the label
+                proportions = np.random.dirichlet(np.repeat(beta, n_parties))
+                proportions = np.array(   # 0 or x
+                    [p * (len(idx_j) < data_size / n_parties) for p, idx_j in zip(proportions, idx_batch)])
+                proportions = proportions / proportions.sum()
+                proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
+                idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
+                min_size = min([len(idx_j) for idx_j in idx_batch])
+
+        for j in range(n_parties):
+            np.random.shuffle(idx_batch[j])
+            net_dataidx_map[j] = idx_batch[j]
+
+    train_data_cls_counts = record_net_data_stats(y_train, net_dataidx_map, logger, args.classes)
+
+    target_loader = DataLoader(target_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
+
+    train_loaders, valid_loaders = {}, {}
+    for idx in range(n_parties):
+        train_loaders[idx] = DataLoader(DatasetSplit(train_dataset, net_dataidx_map[idx]), batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
+        valid_loaders[idx] = DataLoader(DatasetSplit(val_dataset, val_net_dataidx_map[idx]), batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
+       
+    return train_loaders, valid_loaders, target_loader, classes_name, class_to_idx
+
+# ------------------------------------------end 来自 Federated Generative Learning with Foundation Models--------------------------------------
